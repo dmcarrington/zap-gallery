@@ -1,11 +1,10 @@
 /**
- * Full-resolution URL storage and delivery for zap-gated images.
+ * Full-resolution URL storage for zap-gated images.
  *
  * URL lifecycle:
  * 1. Owner uploads image → full-res URL stored in kind 30078 event (NIP-04 encrypted to owner)
- * 2. Buyer zaps the image → owner's admin panel detects the zap receipt
- * 3. Owner's admin sends full-res URL to buyer via kind 4 DM (NIP-04 encrypted)
- * 4. Buyer receives DM with URL and can download the full-res image directly
+ * 2. Buyer zaps the image → calls /api/download/[slug] which verifies the zap
+ * 3. Server decrypts URL from kind 30078, returns it to buyer, sends DM in background
  *
  * Security model: Blossom URLs contain the file's SHA-256 hash (64 hex chars = 256 bits
  * of entropy), making them unguessable. The URL is only revealed after payment.
@@ -15,8 +14,6 @@ import { NDKEvent, NDKUser } from '@nostr-dev-kit/ndk';
 import { ndk } from '$lib/ndk';
 import { GALLERY_OWNER_PUBKEY } from '$lib/config';
 import { KIND_APP_DATA } from './events';
-
-const KIND_ENCRYPTED_DM = 4; // NIP-04 encrypted DM
 
 export interface ImageUrlData {
 	url: string; // full-res Blossom URL
@@ -52,7 +49,7 @@ export async function storeImageUrl(urlData: ImageUrlData): Promise<void> {
 
 /**
  * Retrieve the full-res URL for an image from the owner's kind 30078 event.
- * Only works when logged in as the gallery owner.
+ * Only works when logged in as the gallery owner (client-side).
  */
 export async function retrieveImageUrl(slug: string): Promise<ImageUrlData | null> {
 	if (!ndk.signer) return null;
@@ -74,73 +71,4 @@ export async function retrieveImageUrl(slug: string): Promise<ImageUrlData | nul
 	} catch {
 		return null;
 	}
-}
-
-/**
- * Send the full-res URL to a buyer via NIP-04 encrypted DM (kind 4).
- * Called by the gallery owner's admin panel after verifying a zap.
- */
-export async function sendUrlToBuyer(
-	buyerPubkey: string,
-	urlData: ImageUrlData
-): Promise<void> {
-	if (!ndk.signer) throw new Error('Signer required');
-
-	const buyerUser = new NDKUser({ pubkey: buyerPubkey });
-	buyerUser.ndk = ndk;
-
-	const payload = JSON.stringify({
-		type: 'zap-gallery-url',
-		...urlData
-	});
-
-	const encrypted = await ndk.signer.encrypt(buyerUser, payload, 'nip04');
-
-	const event = new NDKEvent(ndk);
-	event.kind = KIND_ENCRYPTED_DM;
-	event.content = encrypted;
-	event.tags = [['p', buyerPubkey]];
-
-	await event.publish();
-}
-
-/**
- * Fetch a full-res URL from DMs sent by the gallery owner.
- * Called by the buyer's client after zapping.
- */
-export async function fetchUrlFromDMs(slug: string): Promise<ImageUrlData | null> {
-	if (!ndk.signer) return null;
-
-	const user = await ndk.signer.user();
-	const myPubkey = user.pubkey;
-
-	// Fetch NIP-04 DMs from gallery owner to this user
-	const events = await ndk.fetchEvents({
-		kinds: [KIND_ENCRYPTED_DM as number],
-		authors: [GALLERY_OWNER_PUBKEY],
-		'#p': [myPubkey]
-	});
-
-	const ownerUser = new NDKUser({ pubkey: GALLERY_OWNER_PUBKEY });
-	ownerUser.ndk = ndk;
-
-	for (const event of events) {
-		try {
-			const decrypted = await ndk.signer.decrypt(ownerUser, event.content, 'nip04');
-			const payload = JSON.parse(decrypted);
-
-			if (payload.type === 'zap-gallery-url' && payload.slug === slug) {
-				return {
-					url: payload.url,
-					slug: payload.slug,
-					mimeType: payload.mimeType
-				};
-			}
-		} catch {
-			// Not for us or can't decrypt — skip
-			continue;
-		}
-	}
-
-	return null;
 }

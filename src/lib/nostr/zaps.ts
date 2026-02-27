@@ -19,6 +19,53 @@ export interface ZapReceipt {
 }
 
 /**
+ * Fetch zap receipts with a hard timeout.
+ *
+ * NDK's fetchEvents waits for EOSE from a majority of relays before
+ * resolving. If even one relay is slow the promise can hang indefinitely.
+ * This helper uses a raw subscription with a timeout so callers always
+ * get a result.
+ */
+export function fetchZapReceipts(
+	imageEventId: string,
+	timeoutMs = 4000
+): Promise<ZapReceipt[]> {
+	return new Promise((resolve) => {
+		const events = new Map<string, NDKEvent>();
+
+		const sub: NDKSubscription = ndk.subscribe(
+			{
+				kinds: [KIND_ZAP_RECEIPT as number],
+				'#e': [imageEventId]
+			},
+			{ closeOnEose: true }
+		);
+
+		const finish = () => {
+			sub.stop();
+			const receipts: ZapReceipt[] = [];
+			for (const event of events.values()) {
+				const receipt = parseZapReceipt(event);
+				if (receipt) receipts.push(receipt);
+			}
+			resolve(receipts.sort((a, b) => b.createdAt - a.createdAt));
+		};
+
+		// Hard timeout — resolve with whatever we have so far
+		const timer = setTimeout(finish, timeoutMs);
+
+		sub.on('event', (event: NDKEvent) => {
+			events.set(event.id, event);
+		});
+
+		sub.on('eose', () => {
+			clearTimeout(timer);
+			finish();
+		});
+	});
+}
+
+/**
  * Check if a pubkey has a valid zap receipt for a specific image event
  * that meets the minimum required amount.
  */
@@ -31,24 +78,6 @@ export async function hasValidZap(
 	return receipts.some(
 		(r) => r.senderPubkey === buyerPubkey && r.amountSats >= requiredSats
 	);
-}
-
-/**
- * Fetch and parse all zap receipts for a given event.
- */
-export async function fetchZapReceipts(imageEventId: string): Promise<ZapReceipt[]> {
-	const events = await ndk.fetchEvents({
-		kinds: [KIND_ZAP_RECEIPT as number],
-		'#e': [imageEventId]
-	});
-
-	const receipts: ZapReceipt[] = [];
-	for (const event of events) {
-		const receipt = parseZapReceipt(event);
-		if (receipt) receipts.push(receipt);
-	}
-
-	return receipts.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 /**

@@ -1,11 +1,9 @@
 <script lang="ts">
-	import { NDKUser } from '@nostr-dev-kit/ndk';
-	import { ndk } from '$lib/ndk';
 	import { getAuth } from '$lib/stores/auth.svelte';
 	import { getWallet } from '$lib/stores/wallet.svelte';
-	import { GALLERY_OWNER_PUBKEY } from '$lib/config';
 	import type { GalleryImage } from '$lib/nostr/events';
-	import { hasValidZap, watchZapReceipts } from '$lib/nostr/zaps';
+	import { watchZapReceipts } from '$lib/nostr/zaps';
+	import QRCode from 'qrcode';
 	import { onMount } from 'svelte';
 
 	let {
@@ -13,124 +11,58 @@
 		onPurchased
 	}: {
 		image: GalleryImage;
-		onPurchased?: () => void;
+		onPurchased?: (paymentHash: string) => void;
 	} = $props();
 
 	const auth = getAuth();
 	const wallet = getWallet();
 
-	let zapState = $state<'idle' | 'checking' | 'zapping' | 'waiting' | 'paying' | 'purchased'>('idle');
+	let zapState = $state<'idle' | 'zapping' | 'waiting' | 'paying' | 'purchased'>('idle');
 	let hasPurchased = $state(false);
 	let bolt11 = $state<string | null>(null);
+	let paymentHash = $state<string | null>(null);
 	let error = $state<string | null>(null);
 	let unwatch: (() => void) | null = null;
-
-	// Check for existing zap receipt on mount and when auth changes
-	onMount(() => {
-		checkExistingZap();
-		return () => {
-			if (unwatch) unwatch();
-		};
-	});
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	let qrDataUrl = $state<string | null>(null);
 
 	$effect(() => {
-		if (auth.pubkey && image.eventId) {
-			checkExistingZap();
+		if (bolt11 && zapState === 'waiting') {
+			QRCode.toDataURL(bolt11.toUpperCase(), {
+				width: 256,
+				margin: 2,
+				color: { dark: '#000000', light: '#ffffff' }
+			}).then((url: string) => {
+				qrDataUrl = url;
+			});
+		} else {
+			qrDataUrl = null;
 		}
 	});
 
-	async function checkExistingZap() {
-		if (!auth.pubkey || !image.eventId || !image.priceSats) return;
-		zapState = 'checking';
-		try {
-			// Race against a timeout so the zap button is never hidden forever
-			const valid = await Promise.race([
-				hasValidZap(image.eventId, auth.pubkey, image.priceSats),
-				new Promise<false>((resolve) => setTimeout(() => resolve(false), 5000))
-			]);
-			if (valid) {
-				hasPurchased = true;
-				zapState = 'purchased';
-				onPurchased?.();
-			} else {
-				zapState = 'idle';
-			}
-		} catch {
-			zapState = 'idle';
-		}
-	}
-
-	/**
-	 * Fetch the LNURL callback and zap endpoint for a Lightning address.
-	 */
-	async function getZapEndpoint(lud16: string): Promise<{ callback: string; nostrPubkey: string } | null> {
-		const [name, domain] = lud16.split('@');
-		if (!name || !domain) return null;
-
-		const url = `https://${domain}/.well-known/lnurlp/${name}`;
-		const res = await fetch(url);
-		if (!res.ok) return null;
-
-		const body = await res.json();
-		if (body.allowsNostr && body.nostrPubkey) {
-			return { callback: body.callback, nostrPubkey: body.nostrPubkey };
-		}
-		return null;
-	}
-
-	/**
-	 * Build and sign a kind 9734 zap request, then fetch the bolt11 invoice.
-	 */
-	async function createZapInvoice(): Promise<string> {
-		if (!ndk.signer) throw new Error('Signer required');
-
-		// 1. Fetch owner's profile to get lightning address
-		const ownerUser = new NDKUser({ pubkey: GALLERY_OWNER_PUBKEY });
-		ownerUser.ndk = ndk;
-		const profile = await ownerUser.fetchProfile();
-
-		const lud16 = profile?.lud16;
-		if (!lud16) throw new Error('Gallery owner has no Lightning address (lud16) in their Nostr profile');
-
-		// 2. Get LNURL zap endpoint
-		const endpoint = await getZapEndpoint(lud16);
-		if (!endpoint) throw new Error(`Could not get zap endpoint for ${lud16}`);
-
-		// 3. Build kind 9734 zap request
-		const amountMsats = image.priceSats * 1000;
-		const relays = ndk.pool.connectedRelays().map((r) => r.url).slice(0, 4);
-
-		const zapRequestEvent = {
-			kind: 9734,
-			created_at: Math.floor(Date.now() / 1000),
-			content: `Zap for "${image.title}"`,
-			tags: [
-				['p', GALLERY_OWNER_PUBKEY],
-				['e', image.eventId],
-				['amount', amountMsats.toString()],
-				['relays', ...relays],
-				['lnurl', endpoint.callback]
-			]
+	onMount(() => {
+		return () => {
+			if (unwatch) unwatch();
+			if (pollTimer) clearInterval(pollTimer);
 		};
+	});
 
-		// 4. Sign it with the user's NIP-07 extension
-		const signed = await window.nostr!.signEvent(zapRequestEvent);
+	async function createServerInvoice(): Promise<{ bolt11: string; paymentHash: string }> {
+		const res = await fetch(`/api/invoice/${image.slug}`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				pubkey: auth.pubkey,
+				priceSats: image.priceSats
+			})
+		});
 
-		// 5. Fetch the bolt11 invoice from the LNURL callback
-		const callbackUrl = new URL(endpoint.callback);
-		callbackUrl.searchParams.set('amount', amountMsats.toString());
-		callbackUrl.searchParams.set('nostr', JSON.stringify(signed));
-
-		const invoiceRes = await fetch(callbackUrl.toString());
-		if (!invoiceRes.ok) {
-			const text = await invoiceRes.text();
-			throw new Error(`Failed to get invoice: ${text}`);
+		if (!res.ok) {
+			const text = await res.text();
+			throw new Error(`Failed to create invoice: ${text}`);
 		}
 
-		const invoiceBody = await invoiceRes.json();
-		if (!invoiceBody.pr) throw new Error('No invoice returned from zap endpoint');
-
-		return invoiceBody.pr;
+		return res.json();
 	}
 
 	async function handleZap() {
@@ -138,37 +70,36 @@
 
 		error = null;
 		bolt11 = null;
+		paymentHash = null;
 		zapState = 'zapping';
 
 		try {
-			// Get the bolt11 invoice
-			const pr = await createZapInvoice();
-			bolt11 = pr;
+			const invoice = await createServerInvoice();
+			bolt11 = invoice.bolt11;
+			paymentHash = invoice.paymentHash;
 
-			startWatching();
+			startPolling();
+
+			// Also watch for zap receipts as supplementary signal
+			if (image.eventId) {
+				unwatch = watchZapReceipts(image.eventId, (receipt) => {
+					if (receipt.senderPubkey === auth.pubkey && receipt.amountSats >= image.priceSats) {
+						markPurchased();
+					}
+				});
+			}
 
 			// Try auto-pay via NWC wallet
 			if (wallet.isReady && wallet.wallet?.lnPay) {
 				zapState = 'paying';
 
-				// Fire the payment — don't await since the NWC response often
-				// times out even though the payment succeeds instantly.
-				wallet.wallet.lnPay({ pr }).then((res) => {
+				wallet.wallet.lnPay({ pr: invoice.bolt11 }).then((res) => {
 					if (res?.preimage) {
 						markPurchased();
 					}
 				}).catch((err) => {
-					console.warn('[zap] NWC response timeout (payment likely succeeded):', err);
+					console.warn('[zap] NWC pay error (payment may have succeeded):', err);
 				});
-
-				// The NWC payment goes through almost instantly even though the
-				// response event may never arrive. After a short delay, assume
-				// success. The zap receipt watcher serves as backup confirmation.
-				setTimeout(() => {
-					if (zapState === 'paying') {
-						markPurchased();
-					}
-				}, 5000);
 			} else {
 				// No wallet — show invoice for manual payment
 				zapState = 'waiting';
@@ -184,20 +115,34 @@
 		if (zapState === 'purchased') return;
 		hasPurchased = true;
 		zapState = 'purchased';
-		onPurchased?.();
+		if (paymentHash) onPurchased?.(paymentHash);
 		if (unwatch) {
 			unwatch();
 			unwatch = null;
 		}
+		if (pollTimer) {
+			clearInterval(pollTimer);
+			pollTimer = null;
+		}
 	}
 
-	function startWatching() {
-		if (unwatch) unwatch();
-		unwatch = watchZapReceipts(image.eventId, (receipt) => {
-			if (receipt.senderPubkey === auth.pubkey && receipt.amountSats >= image.priceSats) {
-				markPurchased();
+	function startPolling() {
+		if (pollTimer) clearInterval(pollTimer);
+
+		pollTimer = setInterval(async () => {
+			if (zapState === 'purchased' || !paymentHash) return;
+			try {
+				const res = await fetch(
+					`/api/invoice/${image.slug}/status?payment_hash=${encodeURIComponent(paymentHash)}`
+				);
+				if (res.ok) {
+					const data = await res.json();
+					if (data.paid) markPurchased();
+				}
+			} catch {
+				// ignore fetch errors, will retry on next interval
 			}
-		});
+		}, 3000);
 	}
 
 	function copyInvoice() {
@@ -207,7 +152,7 @@
 
 {#if zapState === 'purchased' || hasPurchased}
 	<button
-		onclick={() => onPurchased?.()}
+		onclick={() => { if (paymentHash) onPurchased?.(paymentHash); }}
 		class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg transition-colors cursor-pointer"
 	>
 		Download Full Resolution
@@ -216,10 +161,6 @@
 	<p class="text-center text-gray-400 text-sm">
 		Log in with a Nostr extension to purchase
 	</p>
-{:else if zapState === 'checking'}
-	<div class="w-full text-center py-3 text-gray-400 text-sm">
-		Checking purchase status...
-	</div>
 {:else if zapState === 'zapping'}
 	<button
 		disabled
@@ -237,6 +178,11 @@
 		<p class="text-sm text-yellow-400 text-center">
 			Pay this Lightning invoice to complete your purchase:
 		</p>
+		{#if qrDataUrl}
+			<div class="flex justify-center">
+				<img src={qrDataUrl} alt="Lightning invoice QR code" class="rounded-lg" width="256" height="256" />
+			</div>
+		{/if}
 		<div class="relative">
 			<input
 				type="text"

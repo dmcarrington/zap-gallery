@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { GalleryImage } from '$lib/nostr/events';
 	import { getAuth } from '$lib/stores/auth.svelte';
-	import { retrieveImageUrl, fetchUrlFromDMs } from '$lib/nostr/keys';
+	import { retrieveImageUrl } from '$lib/nostr/keys';
 
-	let { image }: { image: GalleryImage } = $props();
+	let { image, paymentHash = null }: { image: GalleryImage; paymentHash?: string | null } = $props();
 
 	const auth = getAuth();
 
@@ -17,24 +17,41 @@
 		try {
 			downloadState = 'fetching-url';
 
-			let urlData;
 			if (auth.isOwner) {
 				// Owner retrieves URL directly from kind 30078 event
-				urlData = await retrieveImageUrl(image.slug);
+				const urlData = await retrieveImageUrl(image.slug);
+				if (!urlData) {
+					downloadState = 'error';
+					error = 'Could not retrieve the full-res URL. It may not have been stored during upload.';
+					return;
+				}
+				fullResUrl = urlData.url;
 			} else {
-				// Buyer fetches URL from NIP-04 DM sent by owner
-				urlData = await fetchUrlFromDMs(image.slug);
+				// Buyer calls server API which verifies zap and returns URL
+				const res = await fetch(`/api/download/${image.slug}`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						pubkey: auth.pubkey,
+						eventId: image.eventId,
+						priceSats: image.priceSats,
+					...(paymentHash ? { paymentHash } : {})
+					})
+				});
+
+				if (!res.ok) {
+					downloadState = 'error';
+					error =
+						res.status === 402
+							? 'Payment not yet confirmed on relays. Please wait a moment and try again.'
+							: `Download failed: ${await res.text()}`;
+					return;
+				}
+
+				const data = await res.json();
+				fullResUrl = data.url;
 			}
 
-			if (!urlData) {
-				downloadState = 'error';
-				error = auth.isOwner
-					? 'Could not retrieve the full-res URL. It may not have been stored during upload.'
-					: 'Download link not yet delivered. The gallery owner will send it shortly — please try again in a moment.';
-				return;
-			}
-
-			fullResUrl = urlData.url;
 			downloadState = 'ready';
 		} catch (err) {
 			downloadState = 'error';

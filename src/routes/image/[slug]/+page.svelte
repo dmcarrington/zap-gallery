@@ -14,6 +14,7 @@
 	let totalSats = $state(0);
 	let zapCount = $state(0);
 	let purchased = $state(false);
+	let paymentHash = $state<string | null>(null);
 
 	onMount(async () => {
 		if (image?.eventId) {
@@ -23,8 +24,9 @@
 		}
 	});
 
-	function handlePurchased() {
+	function handlePurchased(hash: string) {
 		purchased = true;
+		paymentHash = hash;
 	}
 </script>
 
@@ -62,7 +64,7 @@
 					{#if auth.isOwner}
 						<ImageDownload {image} />
 					{:else if purchased}
-						<ImageDownload {image} />
+						<ImageDownload {image} {paymentHash} />
 					{:else}
 						<p class="text-sm text-gray-400">
 							Full resolution download — {image.priceSats.toLocaleString()} sats
