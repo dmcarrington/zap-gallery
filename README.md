@@ -1,42 +1,89 @@
-# sv
+# Nostr Zap Gallery
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+A SvelteKit photo gallery where visitors browse thumbnails and send Lightning zaps via Nostr to unlock full-resolution image downloads. Zero external infrastructure: all data lives on Nostr relays (events) and Blossom media servers (files).
 
-## Creating a project
+## How It Works
 
-If you're seeing this, you've probably already done this step. Congrats!
+1. The gallery owner uploads images — thumbnails are stored unencrypted on Blossom servers, full-resolution files are encrypted with AES-256-GCM
+2. Visitors browse the thumbnail gallery and zap (Lightning payment) an image to purchase it
+3. The owner's admin panel detects the zap receipt and delivers the decryption key to the buyer via NIP-04 encrypted DM
+4. The buyer's client decrypts and downloads the full-resolution image
+
+## Tech Stack
+
+- **Framework**: SvelteKit (Svelte 5 runes), Tailwind CSS v4, adapter-node
+- **Nostr**: NDK (`@nostr-dev-kit/ndk` + `ndk-svelte`) for relay communication
+- **Wallet**: NDK Wallet for NWC (NIP-47) zap payments
+- **Media**: Blossom servers for image storage (blossom.nostr.build, blossom.band)
+- **Encryption**: Web Crypto API (AES-256-GCM)
+- **Auth**: NIP-07 browser extensions (Alby, nos2x)
+
+## Prerequisites
+
+- Node.js 22+
+- A Nostr keypair (hex pubkey for the gallery owner)
+- A NIP-07 browser extension for authentication
+- (Optional) An NWC-compatible Lightning wallet for zap payments
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill in the values:
 
 ```sh
-# create a new project
-npx sv create my-app
+cp .env.example .env
 ```
 
-To recreate this project with the same configuration:
+| Variable | Description |
+|----------|-------------|
+| `PUBLIC_GALLERY_OWNER_PUBKEY` | Hex pubkey of the gallery owner |
+| `PUBLIC_BLOSSOM_SERVERS` | Comma-separated Blossom server URLs |
+| `PUBLIC_BLOSSOM_MAX_FILE_SIZE_MB` | Max upload size in MiB (default: 20) |
+| `PUBLIC_RELAY_URLS` | Comma-separated Nostr relay WebSocket URLs |
+| `GALLERY_OWNER_NSEC` | Owner's nsec private key (server-side only) |
+| `NWC_URI` | Nostr Wallet Connect URI for Lightning payments |
+
+## Development
+
+Install dependencies and start the dev server:
 
 ```sh
-# recreate this project
-npx sv create --template minimal --types ts --no-install app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+The dev server runs at http://localhost:5173.
 
-To create a production version of your app:
+### Other Commands
+
+```sh
+npm run check        # Run svelte-check (TypeScript + Svelte diagnostics)
+npm run build        # Production build (outputs to build/)
+npm run preview      # Preview the production build locally
+```
+
+## Deployment
+
+### Node
 
 ```sh
 npm run build
+node build
 ```
 
-You can preview the production build with `npm run preview`.
+The server listens on port 3000 by default (set `PORT` to override).
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+### Docker
+
+```sh
+docker build -t zap-gallery .
+docker run -p 3000:3000 --env-file .env zap-gallery
+```
+
+## Nostr Event Kinds
+
+| Kind | Purpose |
+|------|---------|
+| 30024 | Image listing (title, price, Blossom URLs) |
+| 30078 | App-specific data (encrypted AES keys) |
+| 9735 | Zap receipts |
+| 4 | NIP-04 encrypted DMs (key delivery to buyers) |
