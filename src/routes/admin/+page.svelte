@@ -1,7 +1,29 @@
 <script lang="ts">
-	import { getGallery } from '$lib/stores/gallery.svelte';
+	import { getGallery, deleteImage } from '$lib/stores/gallery.svelte';
+	import type { GalleryImage } from '$lib/nostr/events';
 
 	const gallery = getGallery();
+
+	let deleting = $state<string | null>(null);
+	let confirmSlug = $state<string | null>(null);
+
+	async function handleDelete(image: GalleryImage) {
+		if (confirmSlug !== image.slug) {
+			confirmSlug = image.slug;
+			return;
+		}
+		deleting = image.slug;
+		try {
+			await deleteImage(image);
+		} finally {
+			deleting = null;
+			confirmSlug = null;
+		}
+	}
+
+	function cancelDelete() {
+		confirmSlug = null;
+	}
 </script>
 
 <div class="space-y-6">
@@ -40,12 +62,36 @@
 								&#9889; {image.priceSats.toLocaleString()} sats
 							</p>
 						</div>
-						<a
-							href="/image/{image.slug}"
-							class="text-sm text-gray-400 hover:text-white transition-colors"
-						>
-							View
-						</a>
+						<div class="flex items-center gap-2">
+							<a
+								href="/image/{image.slug}"
+								class="text-sm text-gray-400 hover:text-white transition-colors"
+							>
+								View
+							</a>
+							{#if confirmSlug === image.slug}
+								<button
+									onclick={() => handleDelete(image)}
+									disabled={deleting === image.slug}
+									class="text-sm bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded transition-colors disabled:opacity-50"
+								>
+									{deleting === image.slug ? 'Deleting...' : 'Confirm'}
+								</button>
+								<button
+									onclick={cancelDelete}
+									class="text-sm text-gray-400 hover:text-white transition-colors"
+								>
+									Cancel
+								</button>
+							{:else}
+								<button
+									onclick={() => handleDelete(image)}
+									class="text-sm text-red-400 hover:text-red-300 transition-colors"
+								>
+									Delete
+								</button>
+							{/if}
+						</div>
 					</div>
 				{/each}
 			</div>
