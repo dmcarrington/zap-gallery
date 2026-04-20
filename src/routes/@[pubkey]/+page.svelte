@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ZapGallerySDK } from 'zap-gallery-sdk';
-	import { GALLERY_OWNER_PUBKEY, RELAY_URLS, BLOSSOM_SERVERS } from '$lib/config';
+	import { getGallery } from '$lib/stores/gallery.svelte';
+	import { GALLERY_OWNER_PUBKEY } from '$lib/config';
 	import ImageCard from '$lib/components/ImageCard.svelte';
 
 	// Get pubkey from URL param
 	export let pubkey: string;
+	const isOwner = pubkey === GALLERY_OWNER_PUBKEY;
 
-	let gallery: ZapGallerySDK | null = null;
+	const gallery = getGallery();
 	let error: string | null = null;
 
 	// Check if Pro user
@@ -21,24 +22,8 @@
 				return;
 			}
 
-			gallery = new ZapGallerySDK({
-				galleryOwnerPubkey: GALLERY_OWNER_PUBKEY,
-				relayUrls: RELAY_URLS,
-				blossom: {
-					serverUrls: BLOSSOM_SERVERS.split(','),
-					maxFileSizeMB: 20
-				}
-			});
-
-			await gallery.connect();
+			// Subscribe to gallery updates
 			gallery.subscribe();
-
-			// Check if this user has Pro status
-			// Pro status is stored in Nostr app data (kind 30078)
-			// For now, just use URL param flag
-			if (isPro) {
-				console.log('Pro user detected');
-			}
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load gallery';
 		}
@@ -52,10 +37,16 @@
 			<p class="text-gray-400 mt-2">
 				Browse images and send zaps to unlock full-resolution downloads.
 			</p>
-			{#if isPro}
-				<span class="inline-block mt-3 px-3 py-1 bg-amber-500 text-black text-sm font-bold rounded">
-					Pro Tier
+			<span class="inline-block mt-3 px-3 py-1 bg-gray-600 text-sm text-gray-300 rounded">
+				Viewing: @
+			</span>
+			{#if isOwner}
+				<span class="inline-block mt-3 px-3 py-1 bg-amber-500 text-black text-sm font-bold rounded ml-2">
+					Owner
 				</span>
+				<a href="/admin" class="mt-3 inline-block bg-amber-500 text-black px-4 py-2 rounded font-medium hover:bg-amber-400">
+					Owner Dashboard
+				</a>
 			{/if}
 		</header>
 
@@ -65,13 +56,13 @@
 			</div>
 		{/if}
 
-		{#if gallery && gallery.images.length > 0}
+		{#if gallery.images.length > 0}
 			<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
 				{#each gallery.images as image}
 					<ImageCard {image} {isPro} />
 				{/each}
 			</div>
-		{:else if !error}
+		{:else if !gallery.loading}
 			<p class="text-gray-500 italic">Loading gallery...</p>
 		{/if}
 	</div>
