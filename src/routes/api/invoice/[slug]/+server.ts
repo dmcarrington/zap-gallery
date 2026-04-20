@@ -1,14 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { isNwcConfigured, makeInvoice } from '$lib/server/nwc';
-import { storeInvoice } from '$lib/server/payments';
+import { ZapPaymentSDK } from 'zap-gallery-sdk';
+import { getServerNdk } from '$lib/server/ndk';
 
 export const POST: RequestHandler = async ({ params, request }) => {
 	const { slug } = params;
-
-	if (!isNwcConfigured()) {
-		return error(503, 'NWC wallet not configured');
-	}
 
 	const body = await request.json();
 	const pubkey: string | undefined = body.pubkey;
@@ -18,29 +14,29 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		return error(400, 'Missing required fields: pubkey, priceSats');
 	}
 
-	let result;
+	let serverNdk;
 	try {
-		const amountMsats = priceSats * 1000;
-		result = await makeInvoice(amountMsats, `Zap Gallery: ${slug}`);
-	} catch (err) {
-		console.error('[api/invoice] makeInvoice failed:', err);
-		return error(502, 'Failed to create invoice from wallet');
+		serverNdk = await getServerNdk();
+	} catch {
+		return error(500, 'Server signing not configured');
 	}
 
-	const now = Math.floor(Date.now() / 1000);
-	storeInvoice({
-		paymentHash: result.payment_hash,
+	const { ndk } = serverNdk;
+	const payment = new ZapPaymentSDK(ndk);
+
+	const result = await payment.verifyPayment({
 		slug,
 		buyerPubkey: pubkey,
-		bolt11: result.invoice,
-		amountSats: priceSats,
-		paid: false,
-		createdAt: now,
-		expiresAt: result.expiry || now + 600
+		imageEventId: params.imageEventId || 'unknown',
+		priceSats
 	});
 
+	if (result.status !== 'paid') {
+		return error(402, 'Payment not verified');
+	}
+
 	return json({
-		bolt11: result.invoice,
-		paymentHash: result.payment_hash
+		status: 'verified',
+		amountSats: result.amountSats
 	});
 };

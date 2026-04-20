@@ -10,3 +10,9 @@ export const BLOSSOM_SERVERS = (
 
 export const BLOSSOM_MAX_FILE_SIZE_MB = parseInt(env.PUBLIC_BLOSSOM_MAX_FILE_SIZE_MB ?? '20', 10);
 export const BLOSSOM_MAX_FILE_SIZE_BYTES = BLOSSOM_MAX_FILE_SIZE_MB * 1024 * 1024;
+
+export const RELAY_URLS = (
+	env.PUBLIC_RELAY_URLS ?? 'wss://relay.damus.io,wss://relay.nostr.band,wss://nos.lol'
+)
+	.split(',')
+	.map((url) => url.trim());
