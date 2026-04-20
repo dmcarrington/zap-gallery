@@ -1,10 +1,8 @@
 <script lang="ts">
-	import { BLOSSOM_MAX_FILE_SIZE_MB } from '$lib/config';
+	import { BLOSSOM_MAX_FILE_SIZE_MB, GALLERY_OWNER_PUBKEY } from '$lib/config';
 	import { validateFileSize, uploadToBlossom, generateThumbnail, createNip07Signer } from '$lib/blossom';
-	import { storeImageUrl } from '$lib/nostr/keys';
-	import { KIND_IMAGE_LISTING } from '$lib/nostr/events';
 	import { ndk } from '$lib/ndk';
-	import { NDKEvent } from '@nostr-dev-kit/ndk';
+	import { ZapImageSDK } from 'zap-gallery-sdk';
 	import { goto } from '$app/navigation';
 
 	let file = $state<File | null>(null);
@@ -69,27 +67,38 @@
 			step = 'uploading-full';
 			const fullResDescriptor = await uploadToBlossom(file, signer);
 
+			if (!ndk.signer) throw new Error('Signer required');
+			const imageSdk = ZapImageSDK.fromNdk({
+				ndk,
+				signer: ndk.signer,
+				ownerPubkey: GALLERY_OWNER_PUBKEY
+			});
+
 			// Step 4: Publish kind 30024 image listing event
 			// Note: full_res_url is NOT included in the public event — it's stored
-			// encrypted separately so only the owner can retrieve it
+			// encrypted separately so only the owner can retrieve it. The SDK's
+			// createImageEvent adds a 'full_res_url' tag which we overwrite below.
 			step = 'publishing';
-			const event = new NDKEvent(ndk);
-			event.kind = KIND_IMAGE_LISTING;
-			event.content = description;
-			event.tags = [
-				['d', slug],
-				['title', title],
-				['price', priceSats.toString()],
-				['thumb', thumbDescriptor.url],
-				['m', mimeType],
-				['thumb_sha256', thumbDescriptor.sha256]
-			];
-
-			await event.publish();
+			const listing = imageSdk.createImageEvent(
+				slug,
+				title,
+				description,
+				priceSats,
+				thumbDescriptor.url,
+				'',
+				mimeType
+			);
+			listing.tags = listing.tags.filter(([t]) => t !== 'full_res_url');
+			listing.tags.push(['thumb_sha256', thumbDescriptor.sha256]);
+			await listing.publish();
 
 			// Step 5: Store full-res URL (encrypted to owner)
 			step = 'storing-url';
-			await storeImageUrl({ url: fullResDescriptor.url, slug, mimeType });
+			const urlEvent = await imageSdk.createImageUrlEvent(slug, {
+				url: fullResDescriptor.url,
+				mimeType
+			});
+			await urlEvent.publish();
 
 			step = 'done';
 

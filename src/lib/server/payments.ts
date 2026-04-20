@@ -3,6 +3,8 @@
  * Tracks invoices created via NWC and their payment status.
  */
 
+import type { InvoiceStore } from 'zap-gallery-sdk';
+
 export interface PendingInvoice {
 	paymentHash: string;
 	slug: string;
@@ -55,6 +57,15 @@ export function hasPaidInvoice(slug: string, pubkey: string): boolean {
 	}
 	return false;
 }
+
+/**
+ * Adapter that exposes the in-memory tracker to ZapPaymentSDK.
+ */
+export const invoiceStore: InvoiceStore = {
+	async hasPaidInvoice(slug, buyerPubkey) {
+		return hasPaidInvoice(slug, buyerPubkey);
+	}
+};
 
 /** Clean up expired unpaid invoices every 10 minutes */
 const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;

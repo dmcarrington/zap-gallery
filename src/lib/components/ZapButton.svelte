@@ -2,7 +2,9 @@
 	import { getAuth } from '$lib/stores/auth.svelte';
 	import { getWallet } from '$lib/stores/wallet.svelte';
 	import type { GalleryImage } from '$lib/nostr/events';
-	import { watchZapReceipts } from '$lib/nostr/zaps';
+	import { ndk } from '$lib/ndk';
+	import { GALLERY_OWNER_PUBKEY } from '$lib/config';
+	import { ZapPaymentSDK } from 'zap-gallery-sdk';
 	import QRCode from 'qrcode';
 	import { onMount } from 'svelte';
 
@@ -82,7 +84,8 @@
 
 			// Also watch for zap receipts as supplementary signal
 			if (image.eventId) {
-				unwatch = watchZapReceipts(image.eventId, (receipt) => {
+				const paymentSdk = new ZapPaymentSDK(ndk, GALLERY_OWNER_PUBKEY);
+				unwatch = paymentSdk.subscribeZapReceipts(image.eventId, (receipt) => {
 					if (receipt.senderPubkey === auth.pubkey && receipt.amountSats >= image.priceSats) {
 						markPurchased();
 					}
