@@ -1,75 +1,60 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getGallery } from '$lib/stores/gallery.svelte';
-	import { GALLERY_OWNER_PUBKEY } from '$lib/config';
+	import { fetchSellerImages } from '$lib/stores/gallery.svelte';
+	import { page } from '$app/stores';
+	import type { GalleryImage } from '$lib/nostr/events';
 	import ImageCard from '$lib/components/ImageCard.svelte';
+	import { GALLERY_OWNER_PUBKEY } from '$lib/config';
 
-	// Get pubkey from URL param
-	export let pubkey: string;
+	const { data } = $page;
+	const pubkey: string = data.params.pubkey;
 	const isOwner = pubkey === GALLERY_OWNER_PUBKEY;
 
-	const gallery = getGallery();
-	let error: string | null = null;
-
-	// Check if Pro user
-	const searchParams = new URLSearchParams(window.location.search);
-	const isPro = searchParams.get('pro') === '1';
+	let images = $state<GalleryImage[]>([]);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
 
 	onMount(async () => {
 		try {
-			if (!GALLERY_OWNER_PUBKEY) {
-				error = 'Gallery owner pubkey not configured';
-				return;
-			}
-
-			// Subscribe to gallery updates
-			gallery.subscribe();
+			images = await fetchSellerImages(pubkey);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load gallery';
+		} finally {
+			loading = false;
 		}
 	});
 </script>
 
-<div class="min-h-screen bg-gray-900 text-white">
-	<div class="container mx-auto px-4 py-8">
-		<header class="mb-8">
-			<h1 class="text-3xl font-bold">Nostr Zap Gallery</h1>
-			<p class="text-gray-400 mt-2">
-				Browse images and send zaps to unlock full-resolution downloads.
-			</p>
-			<span class="inline-block mt-3 px-3 py-1 bg-gray-600 text-sm text-gray-300 rounded">
-				Viewing: @
-			</span>
+<div class="container mx-auto px-4 py-8">
+	<header class="mb-8">
+		<h1 class="text-2xl font-bold text-white">
+			{isOwner ? 'Your Gallery' : `Gallery of ${pubkey.slice(0, 8)}...${pubkey.slice(-4)}`}
+		</h1>
+		<p class="text-gray-400 mt-1 text-sm">
+			{images.length} image{images.length !== 1 ? 's' : ''} · Pay with Lightning to download full-res
+		</p>
+	</header>
+
+	{#if error}
+		<div class="bg-red-500/10 border border-red-500/50 text-red-400 p-4 rounded">{error}</div>
+	{/if}
+
+	{#if loading}
+		<div class="text-center py-12">
+			<p class="text-gray-500">Loading gallery...</p>
+		</div>
+	{:else if images.length === 0}
+		<div class="text-center py-12 bg-gray-900 border border-gray-800 rounded-lg">
+			<p class="text-gray-500">No images published yet.</p>
 			{#if isOwner}
-				<span class="inline-block mt-3 px-3 py-1 bg-amber-500 text-black text-sm font-bold rounded ml-2">
-					Owner
-				</span>
-				<a href="/admin" class="mt-3 inline-block bg-amber-500 text-black px-4 py-2 rounded font-medium hover:bg-amber-400">
-					Owner Dashboard
-				</a>
+				<a href="/sell" class="text-purple-400 hover:underline text-sm mt-2 inline-block">Upload your first image</a>
 			{/if}
-		</header>
-
-		{#if error}
-			<div class="bg-red-500/10 border border-red-500/50 text-red-500 p-4 rounded">
-				{error}
-			</div>
-		{/if}
-
-		{#if gallery.images.length > 0}
-			<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-				{#each gallery.images as image}
-					<ImageCard {image} {isPro} />
-				{/each}
-			</div>
-		{:else if !gallery.loading}
-			<p class="text-gray-500 italic">Loading gallery...</p>
-		{/if}
-	</div>
+		</div>
+	{:else}
+		<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+			{#each images as image}
+				<ImageCard {image} />
+			{/each}
+		</div>
+	{/if}
 </div>
-
-<style>
-	:global(body) {
-		background-color: #000;
-	}
-</style>

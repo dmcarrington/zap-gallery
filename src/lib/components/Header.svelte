@@ -13,6 +13,12 @@
 			</a>
 			{#if auth.isLoggedIn}
 				<a
+					href="/sell"
+					class="text-sm text-gray-400 hover:text-white transition-colors"
+				>
+					Sell
+				</a>
+				<a
 					href="/pro"
 					class="text-sm {auth.isPro ? 'text-purple-400 font-medium' : 'text-gray-400'} hover:text-white transition-colors"
 				>

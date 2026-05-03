@@ -3,82 +3,121 @@
  */
 
 import { ndk } from '$lib/ndk';
-import { GALLERY_OWNER_PUBKEY } from '$lib/config';
-import { KIND_IMAGE_LISTING, parseImageEvent, type GalleryImage } from '$lib/nostr/events';
-import { NDKEvent, type NDKEvent as NDKEventType } from '@nostr-dev-kit/ndk';
+import type { GalleryImage } from '$lib/nostr/events';
+import { browser } from '$app/environment';
 
 let images = $state<GalleryImage[]>([]);
-let loading = $state(true);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let subscription: any = null;
-const imageMap = new Map<string, GalleryImage>();
+let latestEventTimestamp = $state<number>(0);
+let loaded = $state(false);
+let loading = $state(false);
+let currentAuthorFilter = $state<string | null>(null);
 
-export function getGallery() {
+const LIMIT = 50;
+
+function parseImageEvent(ev: any): GalleryImage {
 	return {
-		get images() {
-			return images;
-		},
-		get loading() {
-			return loading;
-		}
+		eventId: ev.id,
+		title: ev.tagValue('title') || 'Untitled',
+		description: ev.content || '',
+		priceSats: Number(ev.tagValue('price') || 0),
+		slug: ev.tagValue('d') || '',
+		sha256: ev.tagValue('image') || undefined,
+		mimeType: ev.tagValue('m') || undefined,
+		size: Number(ev.tagValue('size') || 0),
+		publisherPubkey: ev.pubkey,
+		publishedAt: Number(ev.tagValue('published_at') || 0),
+		tags: ev.getMatchingTags('t').map((t: string[]) => t[1])
 	};
 }
 
-export function subscribeToGallery() {
-	if (subscription || !GALLERY_OWNER_PUBKEY) return;
-
-	loading = true;
-	imageMap.clear();
-
-	subscription = ndk.subscribe(
-		{
-			kinds: [KIND_IMAGE_LISTING as number],
-			authors: [GALLERY_OWNER_PUBKEY]
-		},
-		{ closeOnEose: false }
-	);
-
-	subscription.on('event', (event: NDKEventType) => {
-		const image = parseImageEvent(event);
-		if (image) {
-			imageMap.set(image.slug, image);
-			images = Array.from(imageMap.values()).sort((a, b) => b.createdAt - a.createdAt);
-		}
-	});
-
-	subscription.on('eose', () => {
-		loading = false;
-	});
+export function getGallery() {
+	return {
+		get images() { return images; },
+		get loaded() { return loaded; },
+		get loading() { return loading; }
+	};
 }
 
-export function unsubscribeFromGallery() {
-	if (subscription) {
-		subscription.stop();
-		subscription = null;
+/** Fetch images from all gallery publishers (home page) */
+export async function fetchGalleryImages(): Promise<void> {
+	loading = true;
+	try {
+		const filter: any = { kinds: [30024], limit: LIMIT };
+		if (latestEventTimestamp > 0) {
+			filter.since = latestEventTimestamp + 1;
+		}
+		const events = await ndk.fetchEvents(filter);
+		const newImages = Array.from(events)
+			.filter(ev => {
+				// Only include published events (exclude deletions)
+				return ev.tagValue('d') != null && ev.tagValue('title') != null && ev.tags.length > 0;
+			})
+			.map(parseImageEvent);
+
+		for (const img of newImages) {
+			if (img.publishedAt > latestEventTimestamp) {
+				latestEventTimestamp = img.publishedAt;
+			}
+		}
+
+		// Deduplicate by eventId
+		const existingIds = new Set(images.map(i => i.eventId));
+		const uniqueNew = newImages.filter(i => !existingIds.has(i.eventId));
+
+		images = [...uniqueNew, ...images].sort((a, b) => b.publishedAt - a.publishedAt);
+		loaded = true;
+	} catch (err) {
+		console.error('Failed to fetch gallery images:', err);
+	} finally {
+		loading = false;
 	}
 }
 
-export function getImageBySlug(slug: string): GalleryImage | undefined {
-	return images.find((img) => img.slug === slug);
+/** Fetch images from a specific seller (per-user gallery) */
+export async function fetchSellerImages(pubkey: string): Promise<GalleryImage[]> {
+	try {
+		const events = await ndk.fetchEvents({
+			kinds: [30024],
+			authors: [pubkey],
+			limit: LIMIT
+		});
+
+		return Array.from(events)
+			.filter(ev => ev.tagValue('d') != null && ev.tagValue('title') != null)
+			.map(parseImageEvent)
+			.sort((a, b) => b.publishedAt - a.publishedAt);
+	} catch (err) {
+		console.error('Failed to fetch seller images:', err);
+		return [];
+	}
 }
 
 /**
- * Delete an image from the gallery by publishing a NIP-09 deletion event (kind 5).
- * This removes the kind 30024 listing from relays but does NOT delete the
- * full-resolution file from Blossom, so existing buyers can still re-download.
+ * Subscribe to real-time updates on Nostr.
+ * Listens for new kind 30024 events.
  */
-export async function deleteImage(image: GalleryImage): Promise<void> {
-	const deleteEvent = new NDKEvent(ndk);
-	deleteEvent.kind = 5;
-	deleteEvent.content = 'Image removed from gallery';
-	deleteEvent.tags = [
-		['e', image.eventId],
-		['a', `${KIND_IMAGE_LISTING}:${GALLERY_OWNER_PUBKEY}:${image.slug}`]
-	];
+export function subscribeGallery(): () => void {
+	const sub = ndk.subscribe(
+		{ kinds: [30024] as number[], since: Math.floor(Date.now() / 1000) },
+		{ closeOnEose: false }
+	);
 
-	await deleteEvent.publish();
+	sub.on('event', (event: any) => {
+		if (event.tagValue('d') && event.tagValue('title')) {
+			const img = parseImageEvent(event);
+			const existingIds = new Set(images.map(i => i.eventId));
+			if (!existingIds.has(img.eventId)) {
+				images = [...images, img].sort((a, b) => b.publishedAt - a.publishedAt);
+			}
+		}
+	});
 
-	// Remove from local state
-	imageMap.delete(image.slug);
-	images = Array.from(imageMap.values()).sort((a, b) => b.createdAt - a.createdAt);
+	return () => sub.stop();
+}
+
+/**
+ * Initialise: fetch images on page load and subscribe for live updates.
+ */
+if (browser) {
+	fetchGalleryImages();
 }
