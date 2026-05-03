@@ -22,9 +22,24 @@ import { nip44 } from 'nostr-tools';
  */
 export const GET: RequestHandler = async ({ params, url }) => {
 	const { slug } = params;
-
 	const buyerPubkey = url.searchParams.get('pubkey');
 	const invoiceHash = url.searchParams.get('invoice');
+	return handleDownload(slug, buyerPubkey, invoiceHash);
+};
+
+export const POST: RequestHandler = async ({ params, request }) => {
+	const { slug } = params;
+	const body = await request.json();
+	const buyerPubkey = body.pubkey;
+	const invoiceHash = body.paymentHash || null;
+	return handleDownload(slug, buyerPubkey, invoiceHash);
+};
+
+async function handleDownload(
+	slug: string,
+	buyerPubkey: string | null,
+	invoiceHash: string | null
+): Promise<ReturnType<typeof json> | ReturnType<typeof error>> {
 
 	if (!buyerPubkey) {
 		return error(400, 'Missing pubkey parameter');
