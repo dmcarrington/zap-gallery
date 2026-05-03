@@ -11,6 +11,10 @@ let pubkey = $state<string | null>(null);
 let isLoggedIn = $derived(pubkey !== null);
 let isOwner = $derived(pubkey !== null && pubkey === GALLERY_OWNER_PUBKEY);
 
+// Pro state — fetched from server on login
+let pro = $state(false);
+let proExpiresAt = $state<string | null>(null);
+
 // Restore login state on load
 if (browser && localStorage.getItem('nostr-auto-login') === 'true') {
 	login().catch(() => {
@@ -28,8 +32,27 @@ export function getAuth() {
 		},
 		get isOwner() {
 			return isOwner;
+		},
+		get isPro() {
+			return pro;
+		},
+		get proExpiresAt() {
+			return proExpiresAt;
 		}
 	};
+}
+
+async function checkPro(): Promise<void> {
+	if (!pubkey) return;
+	try {
+		const res = await fetch(`/api/pro/verify?pubkey=${pubkey}`);
+		const data = await res.json();
+		pro = data.pro;
+		proExpiresAt = data.expiresAt;
+	} catch {
+		pro = false;
+		proExpiresAt = null;
+	}
 }
 
 export async function login(): Promise<string> {
@@ -48,13 +71,24 @@ export async function login(): Promise<string> {
 	pubkey = user.pubkey;
 
 	localStorage.setItem('nostr-auto-login', 'true');
+
+	// Check Pro status in background
+	checkPro();
+
 	return pubkey;
 }
 
 export function logout() {
 	pubkey = null;
+	pro = false;
+	proExpiresAt = null;
 	ndk.signer = undefined;
 	if (browser) {
 		localStorage.removeItem('nostr-auto-login');
 	}
+}
+
+/** Manual refresh of Pro status (e.g. after payment) */
+export async function refreshPro(): Promise<void> {
+	await checkPro();
 }
