@@ -1,8 +1,10 @@
 /**
- * Nostr authentication state using NIP-07 browser extensions.
+ * Nostr authentication state using NIP-07 browser extensions
+ * or nsec private key input.
  */
 
-import { NDKNip07Signer } from '@nostr-dev-kit/ndk';
+import { NDKNip07Signer, NDKPrivateKeySigner, NDK } from '@nostr-dev-kit/ndk';
+import { nip19 } from 'nostr-tools';
 import { ndk } from '$lib/ndk';
 import { GALLERY_OWNER_PUBKEY } from '$lib/config';
 import { browser } from '$app/environment';
@@ -55,20 +57,35 @@ async function checkPro(): Promise<void> {
 	}
 }
 
-export async function login(): Promise<string> {
+export async function login(nsec?: string): Promise<string> {
 	if (!browser) throw new Error('Login is only available in the browser');
 
-	if (typeof window.nostr === 'undefined') {
-		throw new Error(
-			'No Nostr extension found. Install Alby (getalby.com) or nos2x to log in.'
-		);
+	if (nsec) {
+		// nsec input — decode and use as private key signer
+		let hexSk: string;
+		try {
+			const decoded = nip19.decode(nsec);
+			if (decoded.type !== 'nsec') throw new Error('Not an nsec');
+			hexSk = decoded.data as string;
+		} catch {
+			throw new Error('Invalid nsec format');
+		}
+		const signer = new NDKPrivateKeySigner(hexSk);
+		ndk.signer = signer;
+		const user = await signer.user();
+		pubkey = user.pubkey;
+	} else {
+		// NIP-07 browser extension
+		if (typeof window.nostr === 'undefined') {
+			throw new Error(
+				'No Nostr extension found. Install Alby (getalby.com) or nos2x, or use nsec login below.'
+			);
+		}
+		const signer = new NDKNip07Signer();
+		ndk.signer = signer;
+		const user = await signer.user();
+		pubkey = user.pubkey;
 	}
-
-	const signer = new NDKNip07Signer();
-	ndk.signer = signer;
-
-	const user = await signer.user();
-	pubkey = user.pubkey;
 
 	localStorage.setItem('nostr-auto-login', 'true');
 
