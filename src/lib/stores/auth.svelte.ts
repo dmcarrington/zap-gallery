@@ -3,7 +3,7 @@
  * or nsec private key input.
  */
 
-import { NDKNip07Signer, NDKPrivateKeySigner, NDK } from '@nostr-dev-kit/ndk';
+import { NDKNip07Signer, NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
 import { nip19 } from 'nostr-tools';
 import { ndk } from '$lib/ndk';
 import { GALLERY_OWNER_PUBKEY } from '$lib/config';
