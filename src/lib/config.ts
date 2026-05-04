@@ -16,3 +16,10 @@ export const RELAY_URLS = (
 )
 	.split(',')
 	.map((url) => url.trim());
+
+// Pro tier pricing & duration. Public so /pro can render the price.
+export const PRO_PRICE_SATS = parseInt(env.PUBLIC_PRO_PRICE_SATS ?? '1000', 10);
+export const PRO_DURATION_DAYS = parseInt(env.PUBLIC_PRO_DURATION_DAYS ?? '30', 10);
+
+// Free-tier upload limit. Non-Pro users may publish at most this many listings.
+export const FREE_UPLOAD_LIMIT = parseInt(env.PUBLIC_FREE_UPLOAD_LIMIT ?? '1', 10);
