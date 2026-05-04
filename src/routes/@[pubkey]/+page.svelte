@@ -47,7 +47,7 @@
 		<div class="text-center py-12 bg-gray-900 border border-gray-800 rounded-lg">
 			<p class="text-gray-500">No images published yet.</p>
 			{#if isOwner}
-				<a href="/sell" class="text-purple-400 hover:underline text-sm mt-2 inline-block">Upload your first image</a>
+				<a href="/admin" class="text-purple-400 hover:underline text-sm mt-2 inline-block">Upload your first image</a>
 			{/if}
 		</div>
 	{:else}

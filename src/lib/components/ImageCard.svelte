@@ -1,7 +1,10 @@
 <script lang="ts">
 	import type { GalleryImage } from '$lib/nostr/events';
+	import { BLOSSOM_SERVERS } from '$lib/config';
 
 	let { image, isPro }: { image: GalleryImage; isPro?: boolean } = $props();
+
+	const thumbnailUrl = $derived(image.sha256 ? `${BLOSSOM_SERVERS[0]}/${image.sha256}` : '');
 </script>
 
 <a
@@ -9,12 +12,14 @@
 	class="group relative block overflow-hidden rounded-lg bg-gray-900 aspect-square"
 	data-pro={isPro ? "true" : undefined}
 >
-	<img
-		src={image.thumbnailUrl}
-		alt={image.title}
-		loading="lazy"
-		class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-	/>
+	{#if thumbnailUrl}
+		<img
+			src={thumbnailUrl}
+			alt={image.title}
+			loading="lazy"
+			class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+		/>
+	{/if}
 	<div
 		class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
 	>

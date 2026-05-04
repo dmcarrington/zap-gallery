@@ -13,24 +13,16 @@
 			</a>
 			{#if auth.isLoggedIn}
 				<a
-					href="/sell"
+					href="/admin"
 					class="text-sm text-gray-400 hover:text-white transition-colors"
 				>
-					Sell
+					Admin
 				</a>
 				<a
 					href="/pro"
 					class="text-sm {auth.isPro ? 'text-purple-400 font-medium' : 'text-gray-400'} hover:text-white transition-colors"
 				>
 					{auth.isPro ? 'Pro ⚡' : 'Upgrade'}
-				</a>
-			{/if}
-			{#if auth.isOwner}
-				<a
-					href="/admin"
-					class="text-sm text-gray-400 hover:text-white transition-colors"
-				>
-					Admin
 				</a>
 			{/if}
 		</div>
