@@ -11,12 +11,15 @@
 			<a href="/" class="text-xl font-bold text-white hover:text-purple-400 transition-colors">
 				Zap Gallery
 			</a>
-			{#if auth.isOwner}
-				<a
-					href="/admin"
-					class="text-sm text-gray-400 hover:text-white transition-colors"
-				>
+			{#if auth.isLoggedIn}
+				<a href="/admin" class="text-sm text-gray-400 hover:text-white transition-colors">
 					Admin
+				</a>
+				<a
+					href="/pro"
+					class="text-sm {auth.isPro ? 'text-purple-400 font-medium' : 'text-gray-400'} hover:text-white transition-colors"
+				>
+					{auth.isPro ? 'Pro ⚡' : 'Upgrade'}
 				</a>
 			{/if}
 		</div>

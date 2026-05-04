@@ -1,17 +1,34 @@
 /**
- * Gallery state: fetches and reactively updates image listings from Nostr relays.
+ * Gallery store: shows kind 30024 listings from authorised sellers.
+ *
+ * The set of authorised sellers is read from the on-chain seller registry
+ * (kind 30078, owner-signed, d='zap-gallery-sellers'). The gallery owner
+ * is always included implicitly. Querying with a narrow `authors` filter
+ * avoids the broad-query reliability problems we hit when subscribing to
+ * `{kinds:[30024]}` with no author filter (other apps, hung subscriptions,
+ * 404 thumbnails from foreign Blossom servers).
  */
 
 import { ndk } from '$lib/ndk';
 import { GALLERY_OWNER_PUBKEY } from '$lib/config';
 import { KIND_IMAGE_LISTING, parseImageEvent, type GalleryImage } from '$lib/nostr/events';
-import { NDKEvent, type NDKEvent as NDKEventType } from '@nostr-dev-kit/ndk';
+import {
+	NDKEvent,
+	type NDKEvent as NDKEventType,
+	type NDKSubscription
+} from '@nostr-dev-kit/ndk';
+
+const REGISTRY_KIND = 30078;
+const REGISTRY_DTAG = 'zap-gallery-sellers';
+const LOAD_TIMEOUT_MS = 5000;
 
 let images = $state<GalleryImage[]>([]);
-let loading = $state(true);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let subscription: any = null;
-const imageMap = new Map<string, GalleryImage>();
+let loading = $state(false);
+let loaded = $state(false);
+
+let subscription: NDKSubscription | null = null;
+let loadTimer: ReturnType<typeof setTimeout> | null = null;
+const imageMap = new Map<string, GalleryImage>(); // keyed by eventId
 
 export function getGallery() {
 	return {
@@ -20,41 +37,94 @@ export function getGallery() {
 		},
 		get loading() {
 			return loading;
+		},
+		get loaded() {
+			return loaded;
 		}
 	};
 }
 
-export function subscribeToGallery() {
-	if (subscription || !GALLERY_OWNER_PUBKEY) return;
+/** Fetch the seller registry and return active seller pubkeys (owner included). */
+async function fetchActiveSellers(): Promise<string[]> {
+	const sellers = new Set<string>();
+	if (GALLERY_OWNER_PUBKEY) sellers.add(GALLERY_OWNER_PUBKEY);
 
+	if (!GALLERY_OWNER_PUBKEY) return [...sellers];
+
+	try {
+		const event = await ndk.fetchEvent({
+			kinds: [REGISTRY_KIND] as number[],
+			authors: [GALLERY_OWNER_PUBKEY],
+			'#d': [REGISTRY_DTAG]
+		});
+
+		if (event) {
+			const doc = JSON.parse(event.content);
+			const now = Math.floor(Date.now() / 1000);
+			if (doc?.sellers && typeof doc.sellers === 'object') {
+				for (const [pubkey, entry] of Object.entries(doc.sellers as Record<string, { expiresAt?: number }>)) {
+					if (entry?.expiresAt && entry.expiresAt > now) sellers.add(pubkey);
+				}
+			}
+		}
+	} catch (err) {
+		console.error('[gallery] failed to fetch seller registry', err);
+	}
+
+	return [...sellers];
+}
+
+function finishLoading() {
+	if (loaded) return;
+	loaded = true;
+	loading = false;
+	if (loadTimer) {
+		clearTimeout(loadTimer);
+		loadTimer = null;
+	}
+}
+
+export async function subscribeToGallery(): Promise<void> {
+	if (subscription) return;
 	loading = true;
+	loaded = false;
 	imageMap.clear();
+	images = [];
+
+	const authors = await fetchActiveSellers();
+	if (authors.length === 0) {
+		// No registered sellers and no owner pubkey — nothing to query.
+		finishLoading();
+		return;
+	}
 
 	subscription = ndk.subscribe(
 		{
-			kinds: [KIND_IMAGE_LISTING as number],
-			authors: [GALLERY_OWNER_PUBKEY]
+			kinds: [KIND_IMAGE_LISTING] as number[],
+			authors
 		},
 		{ closeOnEose: false }
 	);
 
 	subscription.on('event', (event: NDKEventType) => {
 		const image = parseImageEvent(event);
-		if (image) {
-			imageMap.set(image.slug, image);
-			images = Array.from(imageMap.values()).sort((a, b) => b.createdAt - a.createdAt);
-		}
+		if (!image) return;
+		imageMap.set(image.eventId, image);
+		images = Array.from(imageMap.values()).sort((a, b) => b.createdAt - a.createdAt);
 	});
 
-	subscription.on('eose', () => {
-		loading = false;
-	});
+	subscription.on('eose', finishLoading);
+	loadTimer = setTimeout(finishLoading, LOAD_TIMEOUT_MS);
 }
 
 export function unsubscribeFromGallery() {
 	if (subscription) {
 		subscription.stop();
 		subscription = null;
+	}
+	if (loadTimer) {
+		clearTimeout(loadTimer);
+		loadTimer = null;
 	}
 }
 
@@ -63,22 +133,21 @@ export function getImageBySlug(slug: string): GalleryImage | undefined {
 }
 
 /**
- * Delete an image from the gallery by publishing a NIP-09 deletion event (kind 5).
- * This removes the kind 30024 listing from relays but does NOT delete the
- * full-resolution file from Blossom, so existing buyers can still re-download.
+ * Publish a NIP-09 deletion (kind 5) for a listing. Removes the kind 30024
+ * record from relays; does NOT delete the Blossom file (existing buyers
+ * can still re-download).
  */
-export async function deleteImage(image: GalleryImage): Promise<void> {
+export async function deleteImage(image: GalleryImage, publisherPubkey: string): Promise<void> {
 	const deleteEvent = new NDKEvent(ndk);
 	deleteEvent.kind = 5;
 	deleteEvent.content = 'Image removed from gallery';
 	deleteEvent.tags = [
 		['e', image.eventId],
-		['a', `${KIND_IMAGE_LISTING}:${GALLERY_OWNER_PUBKEY}:${image.slug}`]
+		['a', `${KIND_IMAGE_LISTING}:${publisherPubkey}:${image.slug}`]
 	];
 
 	await deleteEvent.publish();
 
-	// Remove from local state
-	imageMap.delete(image.slug);
+	imageMap.delete(image.eventId);
 	images = Array.from(imageMap.values()).sort((a, b) => b.createdAt - a.createdAt);
 }
