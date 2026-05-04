@@ -2,16 +2,12 @@
 	import '../app.css';
 	import Header from '$lib/components/Header.svelte';
 	import Footer from '$lib/components/Footer.svelte';
-	import { subscribeGallery, fetchGalleryImages } from '$lib/stores/gallery.svelte';
+	import { subscribeGallery } from '$lib/stores/gallery.svelte';
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
 
-	onMount(() => {
-		const unsubscribe = subscribeGallery();
-		fetchGalleryImages();
-		return unsubscribe;
-	});
+	onMount(() => subscribeGallery());
 </script>
 
 <svelte:head>

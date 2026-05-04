@@ -1,18 +1,22 @@
 /**
- * Gallery state: fetches and reactively updates image listings from Nostr relays.
+ * Gallery state: subscribes to image listings from Nostr relays.
+ *
+ * Uses NDK subscriptions (not fetchEvents) because broad queries —
+ * `{ kinds: [30024] }` with no author filter — don't reliably get an
+ * EOSE from every relay, which would cause fetchEvents to hang forever.
+ * The subscription pattern flips `loading=false` on the first EOSE and
+ * has a hard timeout fallback so the UI never gets stuck on the skeleton.
  */
 
 import { ndk } from '$lib/ndk';
 import type { GalleryImage } from '$lib/nostr/events';
-import { browser } from '$app/environment';
 
 let images = $state<GalleryImage[]>([]);
-let latestEventTimestamp = $state<number>(0);
 let loaded = $state(false);
 let loading = $state(false);
-let currentAuthorFilter = $state<string | null>(null);
 
 const LIMIT = 50;
+const LOAD_TIMEOUT_MS = 5000;
 
 function parseImageEvent(ev: any): GalleryImage {
 	return {
@@ -30,6 +34,11 @@ function parseImageEvent(ev: any): GalleryImage {
 	};
 }
 
+function addImage(img: GalleryImage) {
+	if (images.some(i => i.eventId === img.eventId)) return;
+	images = [...images, img].sort((a, b) => b.publishedAt - a.publishedAt);
+}
+
 export function getGallery() {
 	return {
 		get images() { return images; },
@@ -38,46 +47,11 @@ export function getGallery() {
 	};
 }
 
-/** Fetch images from all gallery publishers (home page) */
-export async function fetchGalleryImages(): Promise<void> {
-	loading = true;
-	try {
-		const filter: any = { kinds: [30024], limit: LIMIT };
-		if (latestEventTimestamp > 0) {
-			filter.since = latestEventTimestamp + 1;
-		}
-		const events = await ndk.fetchEvents(filter);
-		const newImages = Array.from(events)
-			.filter(ev => {
-				// Only include published events (exclude deletions)
-				return ev.tagValue('d') != null && ev.tagValue('title') != null && ev.tags.length > 0;
-			})
-			.map(parseImageEvent);
-
-		for (const img of newImages) {
-			if (img.publishedAt > latestEventTimestamp) {
-				latestEventTimestamp = img.publishedAt;
-			}
-		}
-
-		// Deduplicate by eventId
-		const existingIds = new Set(images.map(i => i.eventId));
-		const uniqueNew = newImages.filter(i => !existingIds.has(i.eventId));
-
-		images = [...uniqueNew, ...images].sort((a, b) => b.publishedAt - a.publishedAt);
-		loaded = true;
-	} catch (err) {
-		console.error('Failed to fetch gallery images:', err);
-	} finally {
-		loading = false;
-	}
-}
-
 /** Fetch images from a specific seller (per-user gallery) */
 export async function fetchSellerImages(pubkey: string): Promise<GalleryImage[]> {
 	try {
 		const events = await ndk.fetchEvents({
-			kinds: [30024],
+			kinds: [30024] as any,
 			authors: [pubkey],
 			limit: LIMIT
 		});
@@ -93,31 +67,36 @@ export async function fetchSellerImages(pubkey: string): Promise<GalleryImage[]>
 }
 
 /**
- * Subscribe to real-time updates on Nostr.
- * Listens for new kind 30024 events.
+ * Subscribe to kind 30024 events. Populates `images` as events arrive,
+ * flips `loaded=true` on EOSE (or after LOAD_TIMEOUT_MS as a safety net).
+ * Stays open for live updates.
  */
 export function subscribeGallery(): () => void {
+	loading = true;
+	loaded = false;
+
 	const sub = ndk.subscribe(
-		{ kinds: [30024] as number[], since: Math.floor(Date.now() / 1000) },
+		{ kinds: [30024] as any, limit: LIMIT },
 		{ closeOnEose: false }
 	);
 
 	sub.on('event', (event: any) => {
 		if (event.tagValue('d') && event.tagValue('title')) {
-			const img = parseImageEvent(event);
-			const existingIds = new Set(images.map(i => i.eventId));
-			if (!existingIds.has(img.eventId)) {
-				images = [...images, img].sort((a, b) => b.publishedAt - a.publishedAt);
-			}
+			addImage(parseImageEvent(event));
 		}
 	});
 
-	return () => sub.stop();
-}
+	const finishLoading = () => {
+		if (loaded) return;
+		loaded = true;
+		loading = false;
+	};
 
-/**
- * Initialise: fetch images on page load and subscribe for live updates.
- */
-if (browser) {
-	fetchGalleryImages();
+	sub.on('eose', finishLoading);
+	const timeout = setTimeout(finishLoading, LOAD_TIMEOUT_MS);
+
+	return () => {
+		clearTimeout(timeout);
+		sub.stop();
+	};
 }
