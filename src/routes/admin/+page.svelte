@@ -5,9 +5,19 @@
 	import { parseImageEvent, type GalleryImage, KIND_IMAGE_LISTING } from '$lib/nostr/events';
 	import { uploadAndPublish } from '$lib/upload';
 	import { FREE_UPLOAD_LIMIT } from '$lib/config';
-	import { onMount } from 'svelte';
+	import { nip19 } from 'nostr-tools';
 
 	const auth = getAuth();
+
+	const myNpub = $derived(auth.pubkey ? safeNpub(auth.pubkey) : null);
+
+	function safeNpub(pk: string): string | null {
+		try {
+			return nip19.npubEncode(pk);
+		} catch {
+			return null;
+		}
+	}
 
 	let images = $state<GalleryImage[]>([]);
 	let loading = $state(true);
@@ -122,17 +132,22 @@
 </script>
 
 <div class="container mx-auto px-4 py-8 max-w-4xl">
-	<h1 class="text-2xl font-bold text-white mb-2">Admin</h1>
+	<div class="flex items-baseline justify-between gap-4 mb-2">
+		<h1 class="text-2xl font-bold text-white">Admin</h1>
+		{#if myNpub}
+			<a href="/{myNpub}" class="text-sm text-purple-400 hover:underline">View public gallery →</a>
+		{/if}
+	</div>
 
 	{#if !auth.isLoggedIn}
 		<p class="text-gray-400">Log in with Nostr above to manage your gallery.</p>
 	{:else}
 		<p class="text-gray-400 text-sm mb-6">
 			{#if auth.isPro}
-				<span class="text-purple-400 font-medium">Pro ⚡</span> — unlimited uploads, listed in the public gallery.
+				<span class="text-purple-400 font-medium">Pro ⚡</span> — unlimited uploads.
 			{:else}
-				Free tier — up to {FREE_UPLOAD_LIMIT} listing{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}, only visible on your own page.
-				<a href="/pro" class="text-purple-400 hover:underline">Upgrade to Pro</a> to appear in the gallery and remove the limit.
+				Free tier — up to {FREE_UPLOAD_LIMIT} listing{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}.
+				<a href="/pro" class="text-purple-400 hover:underline">Upgrade to Pro</a> to remove the limit.
 			{/if}
 		</p>
 

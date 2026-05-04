@@ -1,8 +1,19 @@
 <script lang="ts">
 	import LoginButton from './LoginButton.svelte';
 	import { getAuth } from '$lib/stores/auth.svelte';
+	import { nip19 } from 'nostr-tools';
 
 	const auth = getAuth();
+
+	const myNpub = $derived(auth.pubkey ? safeNpub(auth.pubkey) : null);
+
+	function safeNpub(pubkey: string): string | null {
+		try {
+			return nip19.npubEncode(pubkey);
+		} catch {
+			return null;
+		}
+	}
 </script>
 
 <header class="border-b border-gray-800 bg-gray-950">
@@ -12,6 +23,11 @@
 				Zap Gallery
 			</a>
 			{#if auth.isLoggedIn}
+				{#if myNpub}
+					<a href="/{myNpub}" class="text-sm text-gray-400 hover:text-white transition-colors">
+						My gallery
+					</a>
+				{/if}
 				<a href="/admin" class="text-sm text-gray-400 hover:text-white transition-colors">
 					Admin
 				</a>

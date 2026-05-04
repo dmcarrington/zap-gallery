@@ -75,7 +75,7 @@
 		<div class="mt-6 space-y-4">
 			<div>
 				<h1 class="text-2xl font-bold">{image.title}</h1>
-				<a href="/@{image.publisherPubkey}" class="text-sm text-purple-400 hover:underline">
+				<a href="/{nip19.npubEncode(image.publisherPubkey)}" class="text-sm text-purple-400 hover:underline">
 					by {truncatedNpub(image.publisherPubkey)}
 				</a>
 				{#if image.description}
