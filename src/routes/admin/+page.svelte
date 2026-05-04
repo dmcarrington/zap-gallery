@@ -32,10 +32,12 @@
 				authors: [auth.pubkey]
 			});
 
+			const SHA256_HEX = /^[0-9a-f]{64}$/i;
 			const imgs: GalleryImage[] = [];
 			for (const ev of events) {
 				// Skip kind-30024 events from other apps that share the kind number
-				if (ev.tagValue('app_data') == null) continue;
+				const sha = ev.tagValue('image');
+				if (typeof sha !== 'string' || !SHA256_HEX.test(sha)) continue;
 				imgs.push({
 					eventId: ev.id,
 					title: ev.tagValue('title') || 'Untitled',

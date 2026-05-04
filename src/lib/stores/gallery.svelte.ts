@@ -18,15 +18,19 @@ let loading = $state(false);
 const LIMIT = 50;
 const LOAD_TIMEOUT_MS = 5000;
 
-// kind 30024 is not a NIP-reserved kind; other apps use it too. Every
-// listing this app publishes carries an `app_data` tag pointing at the
-// matching kind 30078 record, so we use that as the "this is one of ours"
-// marker to filter out foreign events with incompatible tag schemas.
+// kind 30024 is not a NIP-reserved kind; other apps publish unrelated
+// events under the same kind. This app stores a Blossom sha256 (64 hex
+// chars) in the `image` tag; other apps typically store a URL there.
+// Using that shape as a "this is one of ours" filter avoids us trying
+// to render foreign events with incompatible schemas.
+const SHA256_HEX = /^[0-9a-f]{64}$/i;
 function isGalleryListing(ev: any): boolean {
+	const image = ev.tagValue('image');
 	return (
 		ev.tagValue('d') != null &&
 		ev.tagValue('title') != null &&
-		ev.tagValue('app_data') != null
+		typeof image === 'string' &&
+		SHA256_HEX.test(image)
 	);
 }
 
