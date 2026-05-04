@@ -18,6 +18,18 @@ let loading = $state(false);
 const LIMIT = 50;
 const LOAD_TIMEOUT_MS = 5000;
 
+// kind 30024 is not a NIP-reserved kind; other apps use it too. Every
+// listing this app publishes carries an `app_data` tag pointing at the
+// matching kind 30078 record, so we use that as the "this is one of ours"
+// marker to filter out foreign events with incompatible tag schemas.
+function isGalleryListing(ev: any): boolean {
+	return (
+		ev.tagValue('d') != null &&
+		ev.tagValue('title') != null &&
+		ev.tagValue('app_data') != null
+	);
+}
+
 function parseImageEvent(ev: any): GalleryImage {
 	return {
 		eventId: ev.id,
@@ -57,7 +69,7 @@ export async function fetchSellerImages(pubkey: string): Promise<GalleryImage[]>
 		});
 
 		return Array.from(events)
-			.filter(ev => ev.tagValue('d') != null && ev.tagValue('title') != null)
+			.filter(isGalleryListing)
 			.map(parseImageEvent)
 			.sort((a, b) => b.publishedAt - a.publishedAt);
 	} catch (err) {
@@ -81,7 +93,7 @@ export function subscribeGallery(): () => void {
 	);
 
 	sub.on('event', (event: any) => {
-		if (event.tagValue('d') && event.tagValue('title')) {
+		if (isGalleryListing(event)) {
 			addImage(parseImageEvent(event));
 		}
 	});

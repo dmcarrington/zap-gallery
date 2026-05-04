@@ -34,6 +34,8 @@
 
 			const imgs: GalleryImage[] = [];
 			for (const ev of events) {
+				// Skip kind-30024 events from other apps that share the kind number
+				if (ev.tagValue('app_data') == null) continue;
 				imgs.push({
 					eventId: ev.id,
 					title: ev.tagValue('title') || 'Untitled',
