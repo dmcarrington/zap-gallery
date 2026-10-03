@@ -38,7 +38,6 @@ Nostr Zap Gallery — a SvelteKit photo gallery where visitors browse thumbnails
 - `src/lib/server/listings.ts` — Server-side listing lookup (source of truth for price)
 - `src/lib/server/payments.ts` — HMAC-signed invoice tokens; settlement re-checked over NWC (no server state)
 - `src/lib/stores/auth.svelte.ts` — Reactive auth state (login/logout/isOwner)
-- `src/lib/stores/gallery.svelte.ts` — Reactive gallery image subscriptions
 - `src/lib/stores/wallet.svelte.ts` — NWC wallet connection state
 - `src/lib/ndk-wallet.d.ts` — Type declarations for ndk-wallet (ships source without dist)
 
