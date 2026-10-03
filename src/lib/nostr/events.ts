@@ -19,8 +19,8 @@ export interface GalleryImage {
 	description: string;
 	priceSats: number;
 	thumbnailUrl: string; // Blossom URL (public)
-	fullResUrl: string; // Blossom URL of full-res
-	imageHash?: string; // sha256 of the full-res blob, if recorded
+	fullResUrl: string; // legacy listings only: public URL of an unencrypted full-res
+	imageHash?: string; // legacy listings only: sha256 of the full-res blob
 	mimeType: string;
 	size: number;
 	createdAt: number;

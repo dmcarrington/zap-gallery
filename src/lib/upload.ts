@@ -1,16 +1,19 @@
 /**
  * Client-side upload + publish flow.
  *
- * Generates a thumbnail, uploads both thumbnail and full-resolution image
- * to Blossom using the user's signer, then signs and publishes a
- * kind 30024 listing event. Runs entirely in the browser — Vercel function
- * body limits make server-side upload of 20 MB images impractical.
+ * Generates a thumbnail, encrypts the full-resolution image with a fresh
+ * AES-256-GCM key, uploads the thumbnail and the ciphertext to Blossom using
+ * the user's signer, stores the key, then signs and publishes a kind 30024
+ * listing event. Runs entirely in the browser — Vercel function body limits
+ * make server-side upload of 20 MB images impractical.
  */
 
 import { NDKEvent } from '@nostr-dev-kit/ndk';
 import type { Signer, SignedEvent } from 'blossom-client-sdk';
 import { ndk } from './ndk';
 import { uploadToBlossom, generateThumbnail } from './blossom';
+import { generateImageKey, encryptBlob } from './crypto';
+import { storeImageSecret } from './nostr/keys';
 
 export interface UploadInput {
 	file: File;
@@ -24,8 +27,7 @@ export interface UploadResult {
 	eventId: string;
 	slug: string;
 	thumbnailUrl: string;
-	fullResUrl: string;
-	sha256: string;
+	sha256: string; // of the encrypted full-res blob
 }
 
 const KIND_IMAGE_LISTING = 30024;
@@ -74,11 +76,15 @@ export async function uploadAndPublish(input: UploadInput): Promise<UploadResult
 	const thumbBlob = await generateThumbnail(input.file, THUMB_MAX_WIDTH);
 	const thumb = await uploadToBlossom(thumbBlob, signer);
 
-	// 2. Upload full-resolution
-	const full = await uploadToBlossom(input.file, signer);
-
-	// 3. Build & publish listing
+	// 2. Encrypt + upload full-resolution. Only ciphertext leaves the browser.
+	const key = generateImageKey();
+	const full = await uploadToBlossom(await encryptBlob(input.file, key), signer);
 	const slug = makeSlug(input.title, full.sha256);
+
+	// 3. Store the key before listing, so a listing never exists without one
+	await storeImageSecret({ slug, url: full.url, key, mimeType: input.file.type });
+
+	// 4. Build & publish listing. The full-res URL and hash stay out of it.
 	const event = new NDKEvent(ndk);
 	event.kind = KIND_IMAGE_LISTING;
 	event.content = input.description ?? '';
@@ -88,8 +94,6 @@ export async function uploadAndPublish(input: UploadInput): Promise<UploadResult
 		['price', String(input.priceSats)],
 		['currency', 'sats'],
 		['thumb', thumb.url],
-		['full_res_url', full.url],
-		['image', full.sha256],
 		['m', input.file.type],
 		['size', String(input.file.size)],
 		['published_at', String(Math.floor(Date.now() / 1000))]
@@ -103,7 +107,6 @@ export async function uploadAndPublish(input: UploadInput): Promise<UploadResult
 		eventId: event.id,
 		slug,
 		thumbnailUrl: thumb.url,
-		fullResUrl: full.url,
 		sha256: full.sha256
 	};
 }

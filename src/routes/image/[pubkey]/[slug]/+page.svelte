@@ -9,6 +9,7 @@
 	import WalletConnect from '$lib/components/WalletConnect.svelte';
 	import { onMount } from 'svelte';
 	import { nip19 } from 'nostr-tools';
+	import { loadInvoiceToken } from '$lib/receipts';
 
 	const auth = getAuth();
 	const pubkeyParam = $derived(page.params.pubkey ?? '');
@@ -19,7 +20,7 @@
 	let totalSats = $state(0);
 	let zapCount = $state(0);
 	let purchased = $state(false);
-	let paymentHash = $state<string | null>(null);
+	let token = $state<string | null>(null);
 
 	function truncatedNpub(pubkey: string): string {
 		try {
@@ -52,9 +53,23 @@
 		}
 	});
 
-	function handlePurchased(hash: string) {
+	// Resume a purchase made before a reload: the saved token is re-verified server-side
+	$effect(() => {
+		if (!image || !auth.pubkey || purchased) return;
+		const saved = loadInvoiceToken(auth.pubkey, image);
+		if (!saved) return;
+
+		fetch(`/api/invoice/${image.slug}/status?token=${encodeURIComponent(saved)}`)
+			.then((res) => (res.ok ? res.json() : null))
+			.then((data) => {
+				if (data?.paid) handlePurchased(saved);
+			})
+			.catch(() => {});
+	});
+
+	function handlePurchased(invoiceToken: string) {
 		purchased = true;
-		paymentHash = hash;
+		token = invoiceToken;
 	}
 </script>
 
@@ -102,7 +117,7 @@
 					{#if auth.pubkey === image.publisherPubkey}
 						<ImageDownload {image} />
 					{:else if purchased}
-						<ImageDownload {image} {paymentHash} />
+						<ImageDownload {image} {token} />
 					{:else}
 						<p class="text-sm text-gray-400">
 							Full resolution download — {image.priceSats.toLocaleString()} sats

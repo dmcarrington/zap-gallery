@@ -1,79 +1,65 @@
 /**
- * In-memory payment tracker for server-side invoice management.
- * Tracks invoices created via NWC and their payment status.
+ * Stateless invoice tracking.
+ *
+ * When an invoice is issued the server hands the buyer a signed token binding
+ * the payment hash to the listing, seller, buyer and amount. Payment status is
+ * always re-checked against the wallet over NWC, so nothing here needs to
+ * survive a restart or be shared between serverless instances.
  */
 
-export interface PendingInvoice {
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { env } from '$env/dynamic/private';
+import { isNwcConfigured, lookupInvoice } from './nwc';
+
+export interface InvoiceClaim {
 	paymentHash: string;
 	slug: string;
+	sellerPubkey: string;
 	buyerPubkey: string;
-	bolt11: string;
 	amountSats: number;
-	paid: boolean;
-	createdAt: number; // unix seconds
-	expiresAt: number; // unix seconds
 }
 
-/** Primary index: paymentHash → invoice */
-const invoices = new Map<string, PendingInvoice>();
-
-/** Secondary index: "slug:pubkey" → set of paymentHashes */
-const buyerIndex = new Map<string, Set<string>>();
-
-function buyerKey(slug: string, pubkey: string): string {
-	return `${slug}:${pubkey}`;
+function sign(payload: string): Buffer {
+	const nsec = env.GALLERY_OWNER_NSEC;
+	if (!nsec) throw new Error('GALLERY_OWNER_NSEC not configured');
+	// Derive a dedicated MAC key so the nsec itself is never used directly.
+	const key = createHmac('sha256', nsec).update('zap-gallery-invoice-token-v1').digest();
+	return createHmac('sha256', key).update(payload).digest();
 }
 
-export function storeInvoice(invoice: PendingInvoice): void {
-	invoices.set(invoice.paymentHash, invoice);
-
-	const key = buyerKey(invoice.slug, invoice.buyerPubkey);
-	let hashes = buyerIndex.get(key);
-	if (!hashes) {
-		hashes = new Set();
-		buyerIndex.set(key, hashes);
-	}
-	hashes.add(invoice.paymentHash);
+export function signInvoiceToken(claim: InvoiceClaim): string {
+	const payload = Buffer.from(JSON.stringify(claim)).toString('base64url');
+	return `${payload}.${sign(payload).toString('base64url')}`;
 }
 
-export function getInvoice(paymentHash: string): PendingInvoice | undefined {
-	return invoices.get(paymentHash);
-}
+export function verifyInvoiceToken(token: unknown): InvoiceClaim | null {
+	if (typeof token !== 'string') return null;
+	const [payload, mac, ...rest] = token.split('.');
+	if (!payload || !mac || rest.length) return null;
 
-export function markPaid(paymentHash: string): void {
-	const invoice = invoices.get(paymentHash);
-	if (invoice) invoice.paid = true;
-}
+	const given = Buffer.from(mac, 'base64url');
+	const expected = sign(payload);
+	if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null;
 
-export function hasPaidInvoice(slug: string, pubkey: string): boolean {
-	const hashes = buyerIndex.get(buyerKey(slug, pubkey));
-	if (!hashes) return false;
-
-	for (const hash of hashes) {
-		const invoice = invoices.get(hash);
-		if (invoice?.paid) return true;
-	}
-	return false;
-}
-
-/** Clean up expired unpaid invoices every 10 minutes */
-const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
-
-function cleanup(): void {
-	const now = Math.floor(Date.now() / 1000);
-
-	for (const [hash, invoice] of invoices) {
-		if (!invoice.paid && invoice.expiresAt < now) {
-			invoices.delete(hash);
-
-			const key = buyerKey(invoice.slug, invoice.buyerPubkey);
-			const hashes = buyerIndex.get(key);
-			if (hashes) {
-				hashes.delete(hash);
-				if (hashes.size === 0) buyerIndex.delete(key);
-			}
-		}
+	try {
+		return JSON.parse(Buffer.from(payload, 'base64url').toString()) as InvoiceClaim;
+	} catch {
+		return null;
 	}
 }
 
-setInterval(cleanup, CLEANUP_INTERVAL_MS);
+/** Per-instance cache of settled payment hashes; only saves repeat NWC lookups. */
+const settled = new Set<string>();
+
+export async function isInvoiceSettled(claim: InvoiceClaim): Promise<boolean> {
+	if (settled.has(claim.paymentHash)) return true;
+	if (!isNwcConfigured()) return false;
+
+	const result = await lookupInvoice(claim.paymentHash);
+	if (!result.settled_at) return false;
+	// NIP-47 amounts are msats
+	if (typeof result.amount === 'number' && result.amount < claim.amountSats * 1000) return false;
+
+	settled.add(claim.paymentHash);
+	return true;
+}

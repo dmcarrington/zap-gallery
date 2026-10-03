@@ -2,7 +2,7 @@
  * Server-side NDK instance with the gallery owner's private key signer.
  * Only importable from +server.ts / +page.server.ts files.
  */
-import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
+import NDK, { NDKPrivateKeySigner, type NDKEvent, type NDKFilter } from '@nostr-dev-kit/ndk';
 import { env } from '$env/dynamic/private';
 import { env as publicEnv } from '$env/dynamic/public';
 
@@ -30,7 +30,24 @@ export async function getServerNdk(): Promise<{ ndk: NDK; signer: NDKPrivateKeyS
 		explicitRelayUrls: relayUrls,
 		signer: serverSigner
 	});
-	await serverNdk.connect();
+	// Without a timeout connect() waits for every relay, so one dead relay hangs every request
+	await serverNdk.connect(5000);
 
 	return { ndk: serverNdk, signer: serverSigner };
+}
+
+/**
+ * fetchEvents with a hard timeout. NDK waits for EOSE from a majority of
+ * relays, so one slow relay can otherwise stall a request indefinitely.
+ */
+export async function fetchEventsWithTimeout(
+	ndk: NDK,
+	filter: NDKFilter,
+	timeoutMs: number
+): Promise<NDKEvent[]> {
+	const events = await Promise.race([
+		ndk.fetchEvents(filter),
+		new Promise<Set<NDKEvent>>((resolve) => setTimeout(() => resolve(new Set()), timeoutMs))
+	]);
+	return Array.from(events);
 }

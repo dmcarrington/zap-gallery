@@ -6,8 +6,8 @@ A SvelteKit photo gallery where every Nostr user gets their own gallery and visi
 
 1. Any logged-in Nostr user can publish images at `/<their-npub>` — thumbnails are stored unencrypted on Blossom servers, full-resolution files are encrypted with AES-256-GCM
 2. Visitors browse the thumbnail gallery and zap (Lightning payment) an image to purchase it
-3. The seller's admin panel detects the zap receipt and delivers the decryption key to the buyer via NIP-04 encrypted DM
-4. The buyer's client decrypts and downloads the full-resolution image
+3. The server prices the invoice from the seller's listing, confirms settlement with the wallet, then releases the decryption key to the buyer (also sent as a NIP-04 encrypted DM)
+4. The buyer's client downloads the encrypted file and decrypts it in the browser
 
 ## Tiers
 
