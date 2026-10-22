@@ -11,6 +11,7 @@
 import { NDKEvent } from '@nostr-dev-kit/ndk';
 import type { Signer, SignedEvent } from 'blossom-client-sdk';
 import { ndk } from './ndk';
+import { BLOSSOM_ENCRYPTED_SERVERS } from './config';
 import { uploadToBlossom, generateThumbnail } from './blossom';
 import { generateImageKey, encryptBlob } from './crypto';
 import { storeImageSecret } from './nostr/keys';
@@ -78,7 +79,11 @@ export async function uploadAndPublish(input: UploadInput): Promise<UploadResult
 
 	// 2. Encrypt + upload full-resolution. Only ciphertext leaves the browser.
 	const key = generateImageKey();
-	const full = await uploadToBlossom(await encryptBlob(input.file, key), signer);
+	const full = await uploadToBlossom(
+		await encryptBlob(input.file, key),
+		signer,
+		BLOSSOM_ENCRYPTED_SERVERS
+	);
 	const slug = makeSlug(input.title, full.sha256);
 
 	// 3. Store the key before listing, so a listing never exists without one

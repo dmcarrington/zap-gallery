@@ -69,7 +69,8 @@ cp .env.example .env
 | Variable | Description |
 |----------|-------------|
 | `PUBLIC_GALLERY_OWNER_PUBKEY` | Hex pubkey of the gallery owner; signs the seller registry and is implicitly Pro |
-| `PUBLIC_BLOSSOM_SERVERS` | Comma-separated Blossom server URLs |
+| `PUBLIC_BLOSSOM_SERVERS` | Comma-separated Blossom server URLs for thumbnails |
+| `PUBLIC_BLOSSOM_ENCRYPTED_SERVERS` | Blossom servers for encrypted full-res files; must accept `application/octet-stream` (default: `https://nostr.download`) |
 | `PUBLIC_BLOSSOM_MAX_FILE_SIZE_MB` | Max upload size in MiB (default: 20) |
 | `PUBLIC_RELAY_URLS` | Comma-separated Nostr relay WebSocket URLs |
 | `PUBLIC_PRO_PRICE_SATS` | Price of a Pro upgrade in sats (default: 1000) |

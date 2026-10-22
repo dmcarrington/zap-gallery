@@ -8,6 +8,14 @@ export const BLOSSOM_SERVERS = (
 	.split(',')
 	.map((url) => url.trim());
 
+// Servers for encrypted full-res blobs. nostr.build and blossom.band only take
+// recognisable media files and reject ciphertext with 415.
+export const BLOSSOM_ENCRYPTED_SERVERS = (
+	env.PUBLIC_BLOSSOM_ENCRYPTED_SERVERS ?? 'https://nostr.download'
+)
+	.split(',')
+	.map((url) => url.trim());
+
 export const BLOSSOM_MAX_FILE_SIZE_MB = parseInt(env.PUBLIC_BLOSSOM_MAX_FILE_SIZE_MB ?? '20', 10);
 export const BLOSSOM_MAX_FILE_SIZE_BYTES = BLOSSOM_MAX_FILE_SIZE_MB * 1024 * 1024;
 

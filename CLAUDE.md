@@ -19,7 +19,7 @@ Nostr Zap Gallery — a SvelteKit photo gallery where visitors browse thumbnails
 - **Framework**: SvelteKit with Svelte 5 runes, Tailwind CSS v4, adapter-node
 - **Nostr**: `@nostr-dev-kit/ndk` (v2.15.2, pinned to match ndk-svelte) + `@nostr-dev-kit/ndk-svelte`
 - **Wallet**: `@nostr-dev-kit/ndk-wallet` for NWC (NIP-47) zap payments
-- **Media**: `blossom-client-sdk` for Blossom upload/download (servers: blossom.nostr.build, blossom.band; 20 MiB free limit)
+- **Media**: `blossom-client-sdk` for Blossom upload/download. Thumbnails go to blossom.nostr.build / blossom.band (media only; they reject ciphertext with 415); encrypted full-res goes to `PUBLIC_BLOSSOM_ENCRYPTED_SERVERS` (default nostr.download). Upload auth `server` tags must be the bare hostname
 - **Encryption**: Web Crypto API (AES-256-GCM) for full-res image protection
 - **Auth**: NIP-07 browser extensions (Alby, nos2x)
 - **Key delivery**: NIP-04 encrypted DMs (kind 4) from owner to buyer after verified zap
