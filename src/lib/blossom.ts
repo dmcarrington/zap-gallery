@@ -41,7 +41,8 @@ export function createNip07Signer(): Signer {
 
 export async function uploadToBlossom(
 	file: File | Blob,
-	signer: Signer
+	signer: Signer,
+	servers: string[] = BLOSSOM_SERVERS
 ): Promise<BlobDescriptor> {
 	const sizeCheck = validateFileSize(file);
 	if (!sizeCheck.ok) {
@@ -50,17 +51,22 @@ export async function uploadToBlossom(
 
 	const errors: string[] = [];
 
-	for (const server of BLOSSOM_SERVERS) {
+	for (const server of servers) {
 		try {
 			const blob = await BlossomClient.uploadBlob(server, file, {
 				onAuth: async (serverUrl, sha256, type) => {
-					return createUploadAuth(signer, sha256, { type, servers: [serverUrl] });
+					// Servers match the `server` tag against their bare hostname, not the URL
+					const host = new URL(serverUrl).hostname;
+					return createUploadAuth(signer, sha256, { type, servers: [host] });
 				}
 			});
 			return blob as BlobDescriptor;
 		} catch (err) {
+			// Servers send the reason in X-Reason, which CORS hides from the browser,
+			// so the status code is often the only clue
 			const msg = err instanceof Error ? err.message : String(err);
-			errors.push(`${server}: ${msg}`);
+			const status = err && typeof err === 'object' && 'status' in err ? ` (HTTP ${err.status})` : '';
+			errors.push(`${server}: ${msg}${status}`);
 		}
 	}
 
