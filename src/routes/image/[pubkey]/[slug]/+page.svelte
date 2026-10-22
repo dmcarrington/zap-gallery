@@ -9,7 +9,7 @@
 	import WalletConnect from '$lib/components/WalletConnect.svelte';
 	import { onMount } from 'svelte';
 	import { nip19 } from 'nostr-tools';
-	import { loadInvoiceToken } from '$lib/receipts';
+	import { loadInvoiceToken, hasZapPurchase } from '$lib/receipts';
 	import { SINGLE_OWNER_MODE } from '$lib/config';
 
 	const auth = getAuth();
@@ -54,9 +54,13 @@
 		}
 	});
 
-	// Resume a purchase made before a reload: the saved token is re-verified server-side
+	// Resume a purchase made before a reload; the server re-verifies either kind on download
 	$effect(() => {
 		if (!image || !auth.pubkey || purchased) return;
+		if (hasZapPurchase(auth.pubkey, image)) {
+			handlePurchased(null);
+			return;
+		}
 		const saved = loadInvoiceToken(auth.pubkey, image);
 		if (!saved) return;
 
@@ -68,7 +72,7 @@
 			.catch(() => {});
 	});
 
-	function handlePurchased(invoiceToken: string) {
+	function handlePurchased(invoiceToken: string | null) {
 		purchased = true;
 		token = invoiceToken;
 	}

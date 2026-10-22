@@ -15,6 +15,7 @@ export interface ZapReceipt {
 	amountMsats: number;
 	amountSats: number;
 	comment?: string;
+	bolt11?: string;
 	createdAt: number;
 }
 
@@ -130,6 +131,7 @@ function parseZapReceipt(event: NDKEvent): ZapReceipt | null {
 		amountMsats: invoice.amount,
 		amountSats: Math.floor(invoice.amount / 1000),
 		comment: invoice.comment,
+		bolt11: event.tags.find((t) => t[0] === 'bolt11')?.[1],
 		createdAt: event.created_at ?? 0
 	};
 }

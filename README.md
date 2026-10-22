@@ -5,9 +5,11 @@ A SvelteKit photo gallery where every Nostr user gets their own gallery and visi
 ## How It Works
 
 1. Any logged-in Nostr user can publish images at `/<their-npub>` — thumbnails are stored unencrypted on Blossom servers, full-resolution files are encrypted with AES-256-GCM
-2. Visitors browse the thumbnail gallery and zap (Lightning payment) an image to purchase it
-3. The server prices the invoice from the seller's listing, confirms settlement with the wallet, then releases the decryption key to the buyer (also sent as a NIP-04 encrypted DM)
+2. Visitors browse the thumbnail gallery and zap an image to buy it. The zap (NIP-57) goes straight to the seller's Lightning address (`lud16` in their Nostr profile)
+3. The server verifies the zap receipt — signed by the seller's Lightning provider, with a buyer-signed zap request for this listing and an invoice covering the price — then releases the decryption key, encrypted to the buyer (also sent as a NIP-04 encrypted DM)
 4. The buyer's client downloads the encrypted file and decrypts it in the browser
+
+Sellers need a zap-capable Lightning address in their Nostr profile. If a seller has none and `NWC_URI` is set, buyers pay an invoice from the gallery's own wallet instead, and the server confirms settlement over NWC.
 
 ## Tiers
 
@@ -44,7 +46,7 @@ Set `PUBLIC_SINGLE_OWNER_MODE=true` to run a personal gallery: `/` shows the own
 
 - **Framework**: SvelteKit (Svelte 5 runes), Tailwind CSS v4, adapter-node
 - **Nostr**: NDK (`@nostr-dev-kit/ndk` + `ndk-svelte`) for relay communication
-- **Wallet**: NDK Wallet for NWC (NIP-47) zap payments and seller pass invoices
+- **Payments**: NIP-57 zaps to the seller's Lightning address; NWC (NIP-47) for seller pass invoices and the gallery-wallet fallback
 - **Media**: Blossom servers for image storage (blossom.nostr.build, blossom.band)
 - **Encryption**: Web Crypto API (AES-256-GCM)
 - **Auth**: NIP-07 browser extensions (Alby, nos2x) or nsec entry
@@ -54,7 +56,8 @@ Set `PUBLIC_SINGLE_OWNER_MODE=true` to run a personal gallery: `/` shows the own
 - Node.js 22+
 - A Nostr keypair (hex pubkey for the gallery owner)
 - A NIP-07 browser extension for authentication
-- An NWC-compatible Lightning wallet (required for seller pass invoices and zap payments)
+- A zap-capable Lightning address on each seller's Nostr profile
+- Optional: an NWC-compatible Lightning wallet, needed for seller passes and for sellers without a zap-capable address
 
 ## Configuration
 
@@ -76,7 +79,7 @@ cp .env.example .env
 | `PUBLIC_FREE_UPLOAD_LIMIT` | Max listings for users without a seller pass (default: 1) |
 | `PUBLIC_SINGLE_OWNER_MODE` | `true` to serve only the owner's gallery at `/` and disable other sellers and seller passes (default: `false`) |
 | `GALLERY_OWNER_NSEC` | Owner's nsec private key (server-side only); used to sign the seller registry |
-| `NWC_URI` | Nostr Wallet Connect URI; used to issue and look up seller pass and image invoices |
+| `NWC_URI` | Optional Nostr Wallet Connect URI; issues seller pass invoices, and image invoices for sellers who can't receive zaps |
 
 ## Development
 
@@ -121,5 +124,5 @@ docker run -p 3000:3000 --env-file .env zap-gallery
 |------|---------|
 | 30024 | Image listing (title, price, Blossom URLs) |
 | 30078 | App-specific data — encrypted AES keys (`d`-tag: `zap-gallery-key:{slug}`) and the seller registry (`d`-tag: `zap-gallery-sellers`) |
-| 9735 | Zap receipts |
+| 9734 / 9735 | Zap request (signed by the buyer) and zap receipt (signed by the seller's Lightning provider) — proof of purchase |
 | 4 | NIP-04 encrypted DMs (key delivery to buyers) |
