@@ -68,7 +68,7 @@ Listings published before encryption was restored carry a public `full_res_url` 
 
 See `.env.example`. All prefixed with `PUBLIC_` for SvelteKit client-side access.
 
-`PUBLIC_SINGLE_OWNER_MODE=true` turns an instance into a personal gallery: `/` renders the owner's gallery (`GalleryView`), other npubs and `/pro` 404, and `fetchListing` refuses non-owner sellers so invoice/download only sell the owner's listings.
+`PUBLIC_SINGLE_OWNER_MODE=true` turns an instance into a personal gallery: `/` renders the owner's gallery (`GalleryView`), other npubs and `/sell` 404, and `fetchListing` refuses non-owner sellers so invoice/download only sell the owner's listings.
 
 ## Deployment
 

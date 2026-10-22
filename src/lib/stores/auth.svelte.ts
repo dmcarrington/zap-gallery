@@ -1,7 +1,7 @@
 /**
  * Nostr authentication state. Supports NIP-07 browser extensions and
- * nsec private-key entry. Tracks whether the logged-in pubkey is a Pro
- * (registered) seller; that state is loaded from /api/pro/verify which
+ * nsec private-key entry. Tracks whether the logged-in pubkey holds a seller
+ * pass (is a registered seller); that state is loaded from /api/seller-pass/verify which
  * reads the on-chain seller registry.
  */
 
@@ -12,8 +12,8 @@ import { GALLERY_OWNER_PUBKEY } from '$lib/config';
 import { browser } from '$app/environment';
 
 let pubkey = $state<string | null>(null);
-let pro = $state(false);
-let proExpiresAt = $state<number | null>(null);
+let sellerPass = $state(false);
+let sellerPassExpiresAt = $state<number | null>(null);
 let isLoggedIn = $derived(pubkey !== null);
 let isOwner = $derived(pubkey !== null && pubkey === GALLERY_OWNER_PUBKEY);
 
@@ -34,26 +34,26 @@ export function getAuth() {
 		get isOwner() {
 			return isOwner;
 		},
-		get isPro() {
-			return pro;
+		get hasSellerPass() {
+			return sellerPass;
 		},
-		get proExpiresAt() {
-			return proExpiresAt;
+		get sellerPassExpiresAt() {
+			return sellerPassExpiresAt;
 		}
 	};
 }
 
-async function checkPro(): Promise<void> {
+async function checkSellerPass(): Promise<void> {
 	if (!pubkey) return;
 	try {
-		const res = await fetch(`/api/pro/verify?pubkey=${pubkey}`);
+		const res = await fetch(`/api/seller-pass/verify?pubkey=${pubkey}`);
 		if (!res.ok) return;
 		const data = await res.json();
-		pro = !!data.pro;
-		proExpiresAt = typeof data.expiresAt === 'number' ? data.expiresAt : null;
+		sellerPass = !!data.active;
+		sellerPassExpiresAt = typeof data.expiresAt === 'number' ? data.expiresAt : null;
 	} catch {
-		pro = false;
-		proExpiresAt = null;
+		sellerPass = false;
+		sellerPassExpiresAt = null;
 	}
 }
 
@@ -90,21 +90,21 @@ export async function login(nsec?: string): Promise<string> {
 	}
 
 	localStorage.setItem('nostr-auto-login', 'true');
-	checkPro();
+	checkSellerPass();
 	return pubkey;
 }
 
 export function logout() {
 	pubkey = null;
-	pro = false;
-	proExpiresAt = null;
+	sellerPass = false;
+	sellerPassExpiresAt = null;
 	ndk.signer = undefined;
 	if (browser) {
 		localStorage.removeItem('nostr-auto-login');
 	}
 }
 
-/** Re-fetch Pro status (e.g. after a successful upgrade payment). */
-export async function refreshPro(): Promise<void> {
-	await checkPro();
+/** Re-fetch seller pass status (e.g. after a successful pass payment). */
+export async function refreshSellerPass(): Promise<void> {
+	await checkSellerPass();
 }

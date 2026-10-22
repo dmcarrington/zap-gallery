@@ -3,8 +3,8 @@
 	import { getAuth } from '$lib/stores/auth.svelte';
 	import {
 		FREE_UPLOAD_LIMIT,
-		PRO_PRICE_SATS,
-		PRO_DURATION_DAYS,
+		SELLER_PASS_PRICE_SATS,
+		SELLER_PASS_DURATION_DAYS,
 		SINGLE_OWNER_MODE,
 		GALLERY_OWNER_PUBKEY
 	} from '$lib/config';
@@ -56,19 +56,20 @@
 					>
 						Upload / manage
 					</a>
-					{#if !auth.isPro}
+					{#if !auth.hasSellerPass}
 						<a
-							href="/pro"
+							href="/sell"
 							class="bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
 						>
-							Upgrade to Pro
+							Get a seller pass
 						</a>
 					{/if}
 				</div>
-				{#if !auth.isPro}
+				{#if !auth.hasSellerPass}
 					<p class="text-xs text-gray-500 mt-4">
-						Free tier is capped at {FREE_UPLOAD_LIMIT} listing{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}. Pro is
-						{PRO_PRICE_SATS.toLocaleString()} sats for {PRO_DURATION_DAYS} days, no upload limit.
+						Free tier is capped at {FREE_UPLOAD_LIMIT} listing{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}. A seller
+						pass is {SELLER_PASS_PRICE_SATS.toLocaleString()} sats for {SELLER_PASS_DURATION_DAYS} days, no
+						upload limit.
 					</p>
 				{/if}
 			</div>
@@ -76,8 +77,9 @@
 			<div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
 				<p class="text-gray-400 mb-4">Log in with Nostr (top-right) to start a gallery.</p>
 				<p class="text-xs text-gray-500">
-					Free tier lets you publish {FREE_UPLOAD_LIMIT} image{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}; Pro
-					({PRO_PRICE_SATS.toLocaleString()} sats / {PRO_DURATION_DAYS} days) is unlimited.
+					Free tier lets you publish {FREE_UPLOAD_LIMIT} image{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}; a seller
+					pass ({SELLER_PASS_PRICE_SATS.toLocaleString()} sats / {SELLER_PASS_DURATION_DAYS} days) is
+					unlimited.
 				</p>
 			</div>
 			<p class="text-xs text-gray-500 mt-6">

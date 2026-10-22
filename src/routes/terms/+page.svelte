@@ -6,7 +6,7 @@
 		for content published by sellers.
 	</p>
 	<p class="text-gray-300 mb-4">
-		Pro subscriptions are non-refundable. Lightning payments are handled by your wallet and the
+		Seller passes are non-refundable. Lightning payments are handled by your wallet and the
 		gallery's NWC backend; the operator does not custody funds.
 	</p>
 	<p class="text-gray-300">

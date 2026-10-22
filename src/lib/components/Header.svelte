@@ -38,12 +38,14 @@
 				<a href="/admin" class="text-sm text-gray-400 hover:text-white transition-colors">
 					Admin
 				</a>
-				<a
-					href="/pro"
-					class="text-sm {auth.isPro ? 'text-purple-400 font-medium' : 'text-gray-400'} hover:text-white transition-colors"
-				>
-					{auth.isPro ? 'Pro ⚡' : 'Upgrade'}
-				</a>
+				{#if !auth.isOwner}
+					<a
+						href="/sell"
+						class="text-sm {auth.hasSellerPass ? 'text-purple-400 font-medium' : 'text-gray-400'} hover:text-white transition-colors"
+					>
+						{auth.hasSellerPass ? 'Seller pass ⚡' : 'Sell here'}
+					</a>
+				{/if}
 			{/if}
 		</div>
 		<LoginButton />

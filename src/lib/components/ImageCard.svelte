@@ -1,13 +1,12 @@
 <script lang="ts">
 	import type { GalleryImage } from '$lib/nostr/events';
 
-	let { image, isPro }: { image: GalleryImage; isPro?: boolean } = $props();
+	let { image }: { image: GalleryImage } = $props();
 </script>
 
 <a
 	href="/image/{image.publisherPubkey}/{image.slug}"
 	class="group relative block overflow-hidden rounded-lg bg-gray-900 aspect-square"
-	data-pro={isPro ? 'true' : undefined}
 >
 	{#if image.thumbnailUrl}
 		<img
@@ -26,9 +25,6 @@
 				<span class="text-xs text-yellow-400 font-medium">
 					&#9889; {image.priceSats.toLocaleString()} sats
 				</span>
-			{/if}
-			{#if isPro}
-				<span class="text-xs text-amber-400 font-bold mt-1 block">Pro Tier</span>
 			{/if}
 		</div>
 	</div>
