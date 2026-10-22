@@ -2,6 +2,7 @@
 	import LoginButton from './LoginButton.svelte';
 	import { getAuth } from '$lib/stores/auth.svelte';
 	import { nip19 } from 'nostr-tools';
+	import { SINGLE_OWNER_MODE } from '$lib/config';
 
 	const auth = getAuth();
 
@@ -22,7 +23,13 @@
 			<a href="/" class="text-xl font-bold text-white hover:text-purple-400 transition-colors">
 				Zap Gallery
 			</a>
-			{#if auth.isLoggedIn}
+			{#if SINGLE_OWNER_MODE}
+				{#if auth.isOwner}
+					<a href="/admin" class="text-sm text-gray-400 hover:text-white transition-colors">
+						Admin
+					</a>
+				{/if}
+			{:else if auth.isLoggedIn}
 				{#if myNpub}
 					<a href="/{myNpub}" class="text-sm text-gray-400 hover:text-white transition-colors">
 						My gallery

@@ -5,6 +5,7 @@
 
 import { getServerNdk, fetchEventsWithTimeout } from './ndk';
 import { parseImageEvent, KIND_IMAGE_LISTING, type GalleryImage } from '$lib/nostr/events';
+import { GALLERY_OWNER_PUBKEY, SINGLE_OWNER_MODE } from '$lib/config';
 
 const PUBKEY_HEX = /^[0-9a-f]{64}$/;
 
@@ -12,10 +13,17 @@ export function isPubkeyHex(value: unknown): value is string {
 	return typeof value === 'string' && PUBKEY_HEX.test(value);
 }
 
+/** In single-owner mode only the owner's listings can be bought. */
+function isAllowedSeller(pubkey: string): boolean {
+	return !SINGLE_OWNER_MODE || pubkey === GALLERY_OWNER_PUBKEY;
+}
+
 export async function fetchListing(
 	sellerPubkey: string,
 	slug: string
 ): Promise<GalleryImage | null> {
+	if (!isAllowedSeller(sellerPubkey)) return null;
+
 	const { ndk } = await getServerNdk();
 
 	const events = await fetchEventsWithTimeout(

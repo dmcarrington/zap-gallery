@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import { nip19 } from 'nostr-tools';
 	import { loadInvoiceToken } from '$lib/receipts';
+	import { SINGLE_OWNER_MODE } from '$lib/config';
 
 	const auth = getAuth();
 	const pubkeyParam = $derived(page.params.pubkey ?? '');
@@ -90,7 +91,10 @@
 		<div class="mt-6 space-y-4">
 			<div>
 				<h1 class="text-2xl font-bold">{image.title}</h1>
-				<a href="/{nip19.npubEncode(image.publisherPubkey)}" class="text-sm text-purple-400 hover:underline">
+				<a
+					href={SINGLE_OWNER_MODE ? '/' : `/${nip19.npubEncode(image.publisherPubkey)}`}
+					class="text-sm text-purple-400 hover:underline"
+				>
 					by {truncatedNpub(image.publisherPubkey)}
 				</a>
 				{#if image.description}

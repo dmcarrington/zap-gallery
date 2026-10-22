@@ -23,3 +23,7 @@ export const PRO_DURATION_DAYS = parseInt(env.PUBLIC_PRO_DURATION_DAYS ?? '30', 
 
 // Free-tier upload limit. Non-Pro users may publish at most this many listings.
 export const FREE_UPLOAD_LIMIT = parseInt(env.PUBLIC_FREE_UPLOAD_LIMIT ?? '1', 10);
+
+// Single-owner mode: the instance serves only the owner's gallery at `/`.
+// Other sellers, per-npub galleries and the Pro tier are switched off.
+export const SINGLE_OWNER_MODE = env.PUBLIC_SINGLE_OWNER_MODE === 'true';

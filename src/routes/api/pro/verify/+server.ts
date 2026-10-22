@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import { lookupInvoice } from '$lib/server/nwc';
 import { getProInvoice } from '$lib/server/proPayments';
 import { addSeller, getSellerExpiry, isActiveSeller } from '$lib/server/sellerRegistry';
-import { PRO_DURATION_DAYS } from '$lib/config';
+import { PRO_DURATION_DAYS, SINGLE_OWNER_MODE } from '$lib/config';
 
 const PUBKEY_HEX = /^[0-9a-f]{64}$/i;
 
@@ -38,6 +38,7 @@ export const GET: RequestHandler = async ({ url }) => {
  * Returns: { pro: true, expiresAt }
  */
 export const POST: RequestHandler = async ({ request }) => {
+	if (SINGLE_OWNER_MODE) return error(404, 'Not found');
 	const body = await request.json().catch(() => ({}));
 	const pubkey: string | undefined = body?.pubkey;
 	const paymentHash: string | undefined = body?.paymentHash;

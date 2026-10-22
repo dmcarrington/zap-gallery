@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { isNwcConfigured, makeInvoice } from '$lib/server/nwc';
 import { recordProInvoice } from '$lib/server/proPayments';
-import { PRO_PRICE_SATS, PRO_DURATION_DAYS } from '$lib/config';
+import { PRO_PRICE_SATS, PRO_DURATION_DAYS, SINGLE_OWNER_MODE } from '$lib/config';
 
 const PUBKEY_HEX = /^[0-9a-f]{64}$/i;
 const INVOICE_TTL_SECS = 15 * 60; // 15 minutes to pay
@@ -13,6 +13,7 @@ const INVOICE_TTL_SECS = 15 * 60; // 15 minutes to pay
  * Returns: { bolt11, paymentHash, amountSats, expiresAt }
  */
 export const POST: RequestHandler = async ({ request }) => {
+	if (SINGLE_OWNER_MODE) return error(404, 'Not found');
 	if (!isNwcConfigured()) {
 		return error(503, 'Lightning payments not configured');
 	}

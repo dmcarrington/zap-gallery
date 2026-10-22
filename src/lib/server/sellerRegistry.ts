@@ -15,7 +15,7 @@
 
 import { NDKEvent } from '@nostr-dev-kit/ndk';
 import { getServerNdk } from './ndk';
-import { GALLERY_OWNER_PUBKEY } from '$lib/config';
+import { GALLERY_OWNER_PUBKEY, SINGLE_OWNER_MODE } from '$lib/config';
 
 export const SELLER_REGISTRY_KIND = 30078;
 export const SELLER_REGISTRY_DTAG = 'zap-gallery-sellers';
@@ -88,6 +88,7 @@ export async function addSeller(pubkey: string, expiresAt: number): Promise<void
 /** Returns true if `pubkey` is an active seller (owner or unexpired registry entry). */
 export async function isActiveSeller(pubkey: string): Promise<boolean> {
 	if (pubkey === GALLERY_OWNER_PUBKEY) return true;
+	if (SINGLE_OWNER_MODE) return false;
 	const doc = await fetchRegistry();
 	const entry = doc.sellers[pubkey];
 	if (!entry) return false;

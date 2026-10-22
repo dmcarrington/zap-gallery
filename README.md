@@ -18,6 +18,12 @@ A SvelteKit photo gallery where every Nostr user gets their own gallery and visi
 
 The gallery owner (the pubkey that runs the deployment, set via `PUBLIC_GALLERY_OWNER_PUBKEY`) is always treated as an active Pro seller.
 
+Pro is how an operator sells space on *their* deployment to other sellers. Anyone can run their own instance instead, with no tier limits for its owner.
+
+### Single-owner mode
+
+Set `PUBLIC_SINGLE_OWNER_MODE=true` to run a personal gallery: `/` shows the owner's gallery, `/<npub>` redirects to `/` for the owner and 404s for anyone else, the Pro tier is switched off, and the invoice and download APIs only sell the owner's listings.
+
 ### Pro Upgrade Flow
 
 1. Buyer visits `/pro` and clicks **Upgrade** — the server creates a Lightning invoice via NWC (`POST /api/pro/invoice`)
@@ -69,6 +75,7 @@ cp .env.example .env
 | `PUBLIC_PRO_PRICE_SATS` | Price of a Pro upgrade in sats (default: 1000) |
 | `PUBLIC_PRO_DURATION_DAYS` | Duration of a Pro upgrade in days (default: 30) |
 | `PUBLIC_FREE_UPLOAD_LIMIT` | Max listings allowed on the free tier (default: 1) |
+| `PUBLIC_SINGLE_OWNER_MODE` | `true` to serve only the owner's gallery at `/` and disable other sellers and Pro (default: `false`) |
 | `GALLERY_OWNER_NSEC` | Owner's nsec private key (server-side only); used to sign the seller registry |
 | `NWC_URI` | Nostr Wallet Connect URI; used to issue and look up Pro invoices |
 

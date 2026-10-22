@@ -4,7 +4,7 @@
 	import { NDKEvent } from '@nostr-dev-kit/ndk';
 	import { parseImageEvent, type GalleryImage, KIND_IMAGE_LISTING } from '$lib/nostr/events';
 	import { uploadAndPublish } from '$lib/upload';
-	import { FREE_UPLOAD_LIMIT } from '$lib/config';
+	import { FREE_UPLOAD_LIMIT, SINGLE_OWNER_MODE } from '$lib/config';
 	import { nip19 } from 'nostr-tools';
 
 	const auth = getAuth();
@@ -32,7 +32,9 @@
 	let tagInput = $state('');
 	let fileInputEl: HTMLInputElement | null = $state(null);
 
-	const atFreeLimit = $derived(!auth.isPro && images.length >= FREE_UPLOAD_LIMIT);
+	const atFreeLimit = $derived(
+		!SINGLE_OWNER_MODE && !auth.isPro && images.length >= FREE_UPLOAD_LIMIT
+	);
 
 	$effect(() => {
 		if (auth.pubkey) loadOwnImages();
@@ -135,21 +137,27 @@
 	<div class="flex items-baseline justify-between gap-4 mb-2">
 		<h1 class="text-2xl font-bold text-white">Admin</h1>
 		{#if myNpub}
-			<a href="/{myNpub}" class="text-sm text-purple-400 hover:underline">View public gallery →</a>
+			<a href={SINGLE_OWNER_MODE ? '/' : `/${myNpub}`} class="text-sm text-purple-400 hover:underline">
+				View public gallery →
+			</a>
 		{/if}
 	</div>
 
 	{#if !auth.isLoggedIn}
 		<p class="text-gray-400">Log in with Nostr above to manage your gallery.</p>
+	{:else if SINGLE_OWNER_MODE && !auth.isOwner}
+		<p class="text-gray-400">This gallery is managed by its owner only.</p>
 	{:else}
-		<p class="text-gray-400 text-sm mb-6">
-			{#if auth.isPro}
-				<span class="text-purple-400 font-medium">Pro ⚡</span> — unlimited uploads.
-			{:else}
-				Free tier — up to {FREE_UPLOAD_LIMIT} listing{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}.
-				<a href="/pro" class="text-purple-400 hover:underline">Upgrade to Pro</a> to remove the limit.
-			{/if}
-		</p>
+		{#if !SINGLE_OWNER_MODE}
+			<p class="text-gray-400 text-sm mb-6">
+				{#if auth.isPro}
+					<span class="text-purple-400 font-medium">Pro ⚡</span> — unlimited uploads.
+				{:else}
+					Free tier — up to {FREE_UPLOAD_LIMIT} listing{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}.
+					<a href="/pro" class="text-purple-400 hover:underline">Upgrade to Pro</a> to remove the limit.
+				{/if}
+			</p>
+		{/if}
 
 		<section class="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-8">
 			<h2 class="text-lg font-semibold text-white mb-4">Upload new image</h2>
