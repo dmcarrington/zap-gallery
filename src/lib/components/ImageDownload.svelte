@@ -1,15 +1,32 @@
 <script lang="ts">
 	import type { GalleryImage } from '$lib/nostr/events';
 	import { getAuth } from '$lib/stores/auth.svelte';
-	import { retrieveImageUrl } from '$lib/nostr/keys';
+	import { retrieveOwnImageSecret, type ImageSecret } from '$lib/nostr/keys';
+	import { decryptBlob } from '$lib/crypto';
+	import { onDestroy } from 'svelte';
 
-	let { image, paymentHash = null }: { image: GalleryImage; paymentHash?: string | null } = $props();
+	let { image, token = null }: { image: GalleryImage; token?: string | null } = $props();
 
 	const auth = getAuth();
 
-	let downloadState = $state<'idle' | 'fetching-url' | 'ready' | 'error'>('idle');
+	let downloadState = $state<'idle' | 'fetching-url' | 'decrypting' | 'ready' | 'error'>('idle');
 	let error = $state<string | null>(null);
 	let fullResUrl = $state<string | null>(null);
+	let objectUrl: string | null = null;
+
+	onDestroy(() => {
+		if (objectUrl) URL.revokeObjectURL(objectUrl);
+	});
+
+	/** Seller reads their own kind 30078 secret; legacy listings carry a public URL. */
+	async function fetchOwnSecret(): Promise<ImageSecret | null> {
+		const secret = await retrieveOwnImageSecret(image.slug, image.publisherPubkey);
+		if (secret) return secret;
+		if (image.fullResUrl) {
+			return { slug: image.slug, url: image.fullResUrl, mimeType: image.mimeType };
+		}
+		return null;
+	}
 
 	async function handleDownload() {
 		error = null;
@@ -17,25 +34,24 @@
 		try {
 			downloadState = 'fetching-url';
 
-			if (auth.isOwner) {
-				// Owner retrieves URL directly from kind 30078 event
-				const urlData = await retrieveImageUrl(image.slug);
-				if (!urlData) {
+			let secret: Pick<ImageSecret, 'url' | 'key' | 'mimeType'> | null;
+
+			if (auth.pubkey === image.publisherPubkey) {
+				secret = await fetchOwnSecret();
+				if (!secret) {
 					downloadState = 'error';
-					error = 'Could not retrieve the full-res URL. It may not have been stored during upload.';
+					error = 'Could not retrieve the image key. It may not have been stored during upload.';
 					return;
 				}
-				fullResUrl = urlData.url;
 			} else {
-				// Buyer calls server API which verifies zap and returns URL
+				// Buyer calls server API which verifies payment and returns the key
 				const res = await fetch(`/api/download/${image.slug}`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						pubkey: auth.pubkey,
-						eventId: image.eventId,
-						priceSats: image.priceSats,
-					...(paymentHash ? { paymentHash } : {})
+						sellerPubkey: image.publisherPubkey,
+						...(token ? { token } : {})
 					})
 				});
 
@@ -43,13 +59,32 @@
 					downloadState = 'error';
 					error =
 						res.status === 402
-							? 'Payment not yet confirmed on relays. Please wait a moment and try again.'
+							? 'Payment not yet confirmed. Please wait a moment and try again.'
 							: `Download failed: ${await res.text()}`;
 					return;
 				}
 
-				const data = await res.json();
-				fullResUrl = data.url;
+				secret = await res.json();
+			}
+
+			if (!secret) return;
+
+			if (secret.key) {
+				// Fetch the ciphertext from Blossom and decrypt it in the browser
+				downloadState = 'decrypting';
+				const res = await fetch(secret.url);
+				if (!res.ok) throw new Error(`Could not fetch the image file (${res.status})`);
+				const blob = await decryptBlob(
+					await res.arrayBuffer(),
+					secret.key,
+					secret.mimeType || image.mimeType
+				);
+				if (objectUrl) URL.revokeObjectURL(objectUrl);
+				objectUrl = URL.createObjectURL(blob);
+				fullResUrl = objectUrl;
+			} else {
+				// Legacy unencrypted upload
+				fullResUrl = secret.url;
 			}
 
 			downloadState = 'ready';
@@ -81,6 +116,10 @@
 {:else if downloadState === 'fetching-url'}
 	<div class="w-full text-center py-3 text-gray-400 text-sm">
 		Fetching download link...
+	</div>
+{:else if downloadState === 'decrypting'}
+	<div class="w-full text-center py-3 text-gray-400 text-sm">
+		Downloading and decrypting...
 	</div>
 {:else if downloadState === 'ready' && fullResUrl}
 	<a

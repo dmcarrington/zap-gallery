@@ -1,45 +1,79 @@
 /**
- * Owner-side helper to unlock the encrypted full-res URL for an image.
+ * Image secret storage for zap-gated images.
  *
- * The URL lives in a kind-30078 event, NIP-04 encrypted to the gallery
- * owner. Storing (upload) and buyer-side unlock (post-payment) both go
- * through zap-gallery-sdk's ZapImageSDK; this helper only covers the
- * owner decrypting their own listing client-side (no DM side effect).
+ * Lifecycle:
+ * 1. Seller encrypts the full-res image (AES-256-GCM) and uploads the ciphertext to Blossom
+ * 2. The AES key + ciphertext URL are stored in a kind 30078 event signed by the seller,
+ *    NIP-04 encrypted to the gallery owner's pubkey (the key the server signs with)
+ * 3. Buyer pays → calls /api/download/[slug], which verifies payment
+ * 4. Server decrypts the secret and returns it; the buyer's browser decrypts the image
+ *
+ * The seller can also decrypt their own secret (NIP-04 shared secret is symmetric).
  */
 
-import { NDKUser } from '@nostr-dev-kit/ndk';
+import { NDKEvent, NDKUser } from '@nostr-dev-kit/ndk';
 import { ndk } from '$lib/ndk';
 import { GALLERY_OWNER_PUBKEY } from '$lib/config';
 import { KIND_APP_DATA } from './events';
 
-export interface ImageUrlData {
-	url: string;
-	slug: string;
-	mimeType: string;
+export interface ImageSecret {
+	slug: string; // image slug for identification
+	url: string; // Blossom URL of the encrypted full-res blob
+	key?: string; // base64 AES-256 key; absent on legacy unencrypted uploads
+	mimeType: string; // type of the decrypted image
 }
 
-export async function retrieveImageUrl(slug: string): Promise<ImageUrlData | null> {
+export function imageSecretDTag(slug: string): string {
+	return `zap-gallery-key:${slug}`;
+}
+
+function ownerUser(): NDKUser {
+	if (!GALLERY_OWNER_PUBKEY) throw new Error('PUBLIC_GALLERY_OWNER_PUBKEY is not configured');
+	const user = new NDKUser({ pubkey: GALLERY_OWNER_PUBKEY });
+	user.ndk = ndk;
+	return user;
+}
+
+/**
+ * Publish the secret for an image as a kind 30078 event signed by the
+ * current user, readable only by them and the gallery owner.
+ */
+export async function storeImageSecret(secret: ImageSecret): Promise<void> {
+	if (!ndk.signer) throw new Error('Signer required');
+
+	const encrypted = await ndk.signer.encrypt(ownerUser(), JSON.stringify(secret), 'nip04');
+
+	const event = new NDKEvent(ndk);
+	event.kind = KIND_APP_DATA;
+	event.content = encrypted;
+	event.tags = [
+		['d', imageSecretDTag(secret.slug)],
+		['L', 'zap-gallery'],
+		['l', 'image-key', 'zap-gallery']
+	];
+
+	await event.publish();
+}
+
+/**
+ * Retrieve the secret for one of the logged-in seller's own images.
+ */
+export async function retrieveOwnImageSecret(
+	slug: string,
+	sellerPubkey: string
+): Promise<ImageSecret | null> {
 	if (!ndk.signer) return null;
 
-	const events = await ndk.fetchEvents({
+	const event = await ndk.fetchEvent({
 		kinds: [KIND_APP_DATA as number],
-		authors: [GALLERY_OWNER_PUBKEY],
-		'#d': [`zap-gallery-url:${slug}`]
+		authors: [sellerPubkey],
+		'#d': [imageSecretDTag(slug)]
 	});
-
-	const event = Array.from(events)[0];
 	if (!event) return null;
 
 	try {
-		const ownerUser = new NDKUser({ pubkey: GALLERY_OWNER_PUBKEY });
-		ownerUser.ndk = ndk;
-		const decrypted = await ndk.signer.decrypt(ownerUser, event.content, 'nip04');
-		const data = JSON.parse(decrypted) as Partial<ImageUrlData> & { url: string };
-		return {
-			url: data.url,
-			slug,
-			mimeType: data.mimeType ?? 'image/jpeg'
-		};
+		const decrypted = await ndk.signer.decrypt(ownerUser(), event.content, 'nip04');
+		return JSON.parse(decrypted) as ImageSecret;
 	} catch {
 		return null;
 	}

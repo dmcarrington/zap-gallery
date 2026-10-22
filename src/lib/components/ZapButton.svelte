@@ -2,9 +2,8 @@
 	import { getAuth } from '$lib/stores/auth.svelte';
 	import { getWallet } from '$lib/stores/wallet.svelte';
 	import type { GalleryImage } from '$lib/nostr/events';
-	import { ndk } from '$lib/ndk';
-	import { GALLERY_OWNER_PUBKEY } from '$lib/config';
-	import { ZapPaymentSDK } from 'zap-gallery-sdk';
+	import { watchZapReceipts } from '$lib/nostr/zaps';
+	import { saveInvoiceToken } from '$lib/receipts';
 	import QRCode from 'qrcode';
 	import { onMount } from 'svelte';
 
@@ -13,7 +12,7 @@
 		onPurchased
 	}: {
 		image: GalleryImage;
-		onPurchased?: (paymentHash: string) => void;
+		onPurchased?: (token: string) => void;
 	} = $props();
 
 	const auth = getAuth();
@@ -22,7 +21,7 @@
 	let zapState = $state<'idle' | 'zapping' | 'waiting' | 'paying' | 'purchased'>('idle');
 	let hasPurchased = $state(false);
 	let bolt11 = $state<string | null>(null);
-	let paymentHash = $state<string | null>(null);
+	let token = $state<string | null>(null);
 	let error = $state<string | null>(null);
 	let unwatch: (() => void) | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -49,13 +48,13 @@
 		};
 	});
 
-	async function createServerInvoice(): Promise<{ bolt11: string; paymentHash: string }> {
+	async function createServerInvoice(): Promise<{ bolt11: string; token: string }> {
 		const res = await fetch(`/api/invoice/${image.slug}`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				pubkey: auth.pubkey,
-				priceSats: image.priceSats
+				sellerPubkey: image.publisherPubkey
 			})
 		});
 
@@ -72,20 +71,20 @@
 
 		error = null;
 		bolt11 = null;
-		paymentHash = null;
+		token = null;
 		zapState = 'zapping';
 
 		try {
 			const invoice = await createServerInvoice();
 			bolt11 = invoice.bolt11;
-			paymentHash = invoice.paymentHash;
+			token = invoice.token;
+			saveInvoiceToken(auth.pubkey, image, invoice.token);
 
 			startPolling();
 
 			// Also watch for zap receipts as supplementary signal
 			if (image.eventId) {
-				const paymentSdk = new ZapPaymentSDK(ndk, GALLERY_OWNER_PUBKEY);
-				unwatch = paymentSdk.subscribeZapReceipts(image.eventId, (receipt) => {
+				unwatch = watchZapReceipts(image.eventId, (receipt) => {
 					if (receipt.senderPubkey === auth.pubkey && receipt.amountSats >= image.priceSats) {
 						markPurchased();
 					}
@@ -118,7 +117,7 @@
 		if (zapState === 'purchased') return;
 		hasPurchased = true;
 		zapState = 'purchased';
-		if (paymentHash) onPurchased?.(paymentHash);
+		if (token) onPurchased?.(token);
 		if (unwatch) {
 			unwatch();
 			unwatch = null;
@@ -133,10 +132,10 @@
 		if (pollTimer) clearInterval(pollTimer);
 
 		pollTimer = setInterval(async () => {
-			if (zapState === 'purchased' || !paymentHash) return;
+			if (zapState === 'purchased' || !token) return;
 			try {
 				const res = await fetch(
-					`/api/invoice/${image.slug}/status?payment_hash=${encodeURIComponent(paymentHash)}`
+					`/api/invoice/${image.slug}/status?token=${encodeURIComponent(token)}`
 				);
 				if (res.ok) {
 					const data = await res.json();
@@ -155,7 +154,7 @@
 
 {#if zapState === 'purchased' || hasPurchased}
 	<button
-		onclick={() => { if (paymentHash) onPurchased?.(paymentHash); }}
+		onclick={() => { if (token) onPurchased?.(token); }}
 		class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg transition-colors cursor-pointer"
 	>
 		Download Full Resolution
