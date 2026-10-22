@@ -33,7 +33,7 @@
 	let fileInputEl: HTMLInputElement | null = $state(null);
 
 	const atFreeLimit = $derived(
-		!SINGLE_OWNER_MODE && !auth.isPro && images.length >= FREE_UPLOAD_LIMIT
+		!SINGLE_OWNER_MODE && !auth.hasSellerPass && images.length >= FREE_UPLOAD_LIMIT
 	);
 
 	$effect(() => {
@@ -150,11 +150,13 @@
 	{:else}
 		{#if !SINGLE_OWNER_MODE}
 			<p class="text-gray-400 text-sm mb-6">
-				{#if auth.isPro}
-					<span class="text-purple-400 font-medium">Pro ⚡</span> — unlimited uploads.
+				{#if auth.isOwner}
+					<span class="text-purple-400 font-medium">Owner</span> — unlimited uploads.
+				{:else if auth.hasSellerPass}
+					<span class="text-purple-400 font-medium">Seller pass ⚡</span> — unlimited uploads.
 				{:else}
 					Free tier — up to {FREE_UPLOAD_LIMIT} listing{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}.
-					<a href="/pro" class="text-purple-400 hover:underline">Upgrade to Pro</a> to remove the limit.
+					<a href="/sell" class="text-purple-400 hover:underline">Get a seller pass</a> to remove the limit.
 				{/if}
 			</p>
 		{/if}
@@ -164,7 +166,7 @@
 			{#if atFreeLimit}
 				<div class="bg-amber-500/10 border border-amber-500/40 text-amber-200 text-sm p-3 rounded mb-4">
 					You've used the free-tier limit ({FREE_UPLOAD_LIMIT}). Delete an existing listing or
-					<a href="/pro" class="underline hover:text-amber-100">upgrade to Pro</a> to add more.
+					<a href="/sell" class="underline hover:text-amber-100">get a seller pass</a> to add more.
 				</div>
 			{/if}
 			<form onsubmit={handleUpload} class="space-y-4">

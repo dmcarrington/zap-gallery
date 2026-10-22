@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import QRCode from 'qrcode';
-	import { getAuth, refreshPro } from '$lib/stores/auth.svelte';
-	import { PRO_PRICE_SATS, PRO_DURATION_DAYS } from '$lib/config';
+	import { getAuth, refreshSellerPass } from '$lib/stores/auth.svelte';
+	import {
+		SELLER_PASS_PRICE_SATS,
+		SELLER_PASS_DURATION_DAYS,
+		FREE_UPLOAD_LIMIT
+	} from '$lib/config';
 
 	const auth = getAuth();
 
@@ -12,7 +16,7 @@
 	let bolt11 = $state<string | null>(null);
 	let qrDataUrl = $state<string | null>(null);
 	let paymentHash = $state<string | null>(null);
-	let amountSats = $state<number>(PRO_PRICE_SATS);
+	let amountSats = $state<number>(SELLER_PASS_PRICE_SATS);
 	let invoiceExpiresAt = $state<number | null>(null);
 	let error = $state<string | null>(null);
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -25,7 +29,7 @@
 		});
 	}
 
-	async function startUpgrade() {
+	async function startPurchase() {
 		if (!auth.pubkey) {
 			error = 'Please log in first.';
 			stage = 'error';
@@ -35,7 +39,7 @@
 		stage = 'creating';
 		error = null;
 		try {
-			const res = await fetch('/api/pro/invoice', {
+			const res = await fetch('/api/seller-pass/invoice', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ pubkey: auth.pubkey })
@@ -82,7 +86,7 @@
 		}
 
 		try {
-			const res = await fetch('/api/pro/verify', {
+			const res = await fetch('/api/seller-pass/verify', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ pubkey: auth.pubkey, paymentHash })
@@ -95,10 +99,10 @@
 				throw new Error(msg || 'Verification failed');
 			}
 			const data = await res.json();
-			if (data.pro) {
+			if (data.active) {
 				stopPolling();
 				stage = 'success';
-				await refreshPro();
+				await refreshSellerPass();
 			}
 		} catch (err) {
 			stopPolling();
@@ -119,21 +123,29 @@
 </script>
 
 <div class="container mx-auto px-4 py-8 max-w-2xl">
-	<h1 class="text-2xl font-bold text-white mb-2">Pro Tier</h1>
+	<h1 class="text-2xl font-bold text-white mb-2">Seller pass</h1>
 	<p class="text-gray-400 text-sm mb-6">
-		Pay {PRO_PRICE_SATS.toLocaleString()} sats and your images appear in the gallery for the next {PRO_DURATION_DAYS}
-		days. Free accounts can upload one image as a preview.
+		Sell on this gallery: a seller pass lets you list unlimited images for {SELLER_PASS_DURATION_DAYS}
+		days for {SELLER_PASS_PRICE_SATS.toLocaleString()} sats, paid to the gallery's operator. Without one you
+		can list {FREE_UPLOAD_LIMIT} image{FREE_UPLOAD_LIMIT === 1 ? '' : 's'}.
 	</p>
 
 	{#if !auth.isLoggedIn}
 		<div class="bg-gray-900 border border-gray-800 rounded-lg p-6 text-center">
-			<p class="text-gray-400">Log in with Nostr above to upgrade.</p>
+			<p class="text-gray-400">Log in with Nostr above to get a seller pass.</p>
 		</div>
-	{:else if auth.isPro}
+	{:else if auth.isOwner}
+		<div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
+			<p class="text-gray-400">You run this gallery, so you can list without limits. No pass needed.</p>
+			<a href="/admin" class="mt-4 inline-block text-purple-400 hover:underline text-sm">
+				Go to your dashboard →
+			</a>
+		</div>
+	{:else if auth.hasSellerPass}
 		<div class="bg-green-900/30 border border-green-700 rounded-lg p-6">
-			<h2 class="text-lg font-semibold text-green-300 mb-1">You're Pro ⚡</h2>
-			{#if auth.proExpiresAt}
-				<p class="text-sm text-green-200/80">Active until {formatExpiry(auth.proExpiresAt)}.</p>
+			<h2 class="text-lg font-semibold text-green-300 mb-1">You have a seller pass ⚡</h2>
+			{#if auth.sellerPassExpiresAt}
+				<p class="text-sm text-green-200/80">Active until {formatExpiry(auth.sellerPassExpiresAt)}.</p>
 			{/if}
 			<a href="/admin" class="mt-4 inline-block text-purple-400 hover:underline text-sm">
 				Go to your dashboard →
@@ -142,10 +154,10 @@
 				<div class="mt-6 pt-6 border-t border-green-800/50">
 					<p class="text-sm text-gray-400 mb-2">Renew or extend:</p>
 					<button
-						onclick={startUpgrade}
+						onclick={startPurchase}
 						class="bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors cursor-pointer"
 					>
-						Pay {PRO_PRICE_SATS.toLocaleString()} sats for another {PRO_DURATION_DAYS} days
+						Pay {SELLER_PASS_PRICE_SATS.toLocaleString()} sats for another {SELLER_PASS_DURATION_DAYS} days
 					</button>
 				</div>
 			{/if}
@@ -153,16 +165,16 @@
 	{:else if stage === 'idle' || stage === 'error'}
 		<div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
 			<button
-				onclick={startUpgrade}
+				onclick={startPurchase}
 				class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-3 px-4 rounded-lg transition-colors cursor-pointer"
 			>
-				Upgrade for {PRO_PRICE_SATS.toLocaleString()} sats
+				Get a seller pass for {SELLER_PASS_PRICE_SATS.toLocaleString()} sats
 			</button>
 			{#if error}
 				<p class="mt-3 text-sm text-red-400">{error}</p>
 			{/if}
 			<p class="mt-3 text-xs text-gray-500">
-				By upgrading you accept the
+				By buying a pass you accept the
 				<a href="/terms" class="underline hover:text-gray-300">Terms of Service</a>.
 			</p>
 		</div>
@@ -208,7 +220,7 @@
 		<div class="bg-green-900/30 border border-green-700 rounded-lg p-6 text-center">
 			<h2 class="text-lg font-semibold text-green-300 mb-2">Payment confirmed ⚡</h2>
 			<p class="text-sm text-green-200/80 mb-4">
-				You're a Pro seller for the next {PRO_DURATION_DAYS} days.
+				Your seller pass is active for the next {SELLER_PASS_DURATION_DAYS} days.
 			</p>
 			<a
 				href="/admin"

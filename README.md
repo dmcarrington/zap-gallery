@@ -14,22 +14,20 @@ A SvelteKit photo gallery where every Nostr user gets their own gallery and visi
 | Tier | Cost | Listings |
 |------|------|----------|
 | Free | — | Capped at `PUBLIC_FREE_UPLOAD_LIMIT` (default `1`) |
-| Pro  | `PUBLIC_PRO_PRICE_SATS` sats for `PUBLIC_PRO_DURATION_DAYS` days | Unlimited |
+| Seller pass | `PUBLIC_SELLER_PASS_PRICE_SATS` sats for `PUBLIC_SELLER_PASS_DURATION_DAYS` days | Unlimited |
 
-The gallery owner (the pubkey that runs the deployment, set via `PUBLIC_GALLERY_OWNER_PUBKEY`) is always treated as an active Pro seller.
-
-Pro is how an operator sells space on *their* deployment to other sellers. Anyone can run their own instance instead, with no tier limits for its owner.
+A seller pass is how an operator sells space on *their* deployment to other Nostr users; it adds nothing for the owner. The gallery owner (set via `PUBLIC_GALLERY_OWNER_PUBKEY`) can always list without limits. Anyone can run their own instance instead.
 
 ### Single-owner mode
 
-Set `PUBLIC_SINGLE_OWNER_MODE=true` to run a personal gallery: `/` shows the owner's gallery, `/<npub>` redirects to `/` for the owner and 404s for anyone else, the Pro tier is switched off, and the invoice and download APIs only sell the owner's listings.
+Set `PUBLIC_SINGLE_OWNER_MODE=true` to run a personal gallery: `/` shows the owner's gallery, `/<npub>` redirects to `/` for the owner and 404s for anyone else, seller passes are switched off, and the invoice and download APIs only sell the owner's listings.
 
-### Pro Upgrade Flow
+### Seller Pass Flow
 
-1. Buyer visits `/pro` and clicks **Upgrade** — the server creates a Lightning invoice via NWC (`POST /api/pro/invoice`)
-2. Buyer pays the BOLT11 invoice (QR code or copy-paste); the page polls `POST /api/pro/verify`
-3. On settlement, the server appends/extends the buyer's pubkey in the **seller registry** — a parameterised replaceable kind 30078 event signed by the gallery owner with `d`-tag `zap-gallery-sellers`
-4. Pro status is read back from relays via `GET /api/pro/verify?pubkey=…`, so it survives deploys with no database
+1. A user visits `/sell` and clicks **Get a seller pass** — the server creates a Lightning invoice via NWC (`POST /api/seller-pass/invoice`)
+2. They pay the BOLT11 invoice (QR code or copy-paste); the page polls `POST /api/seller-pass/verify`
+3. On settlement, the server appends/extends their pubkey in the **seller registry** — a parameterised replaceable kind 30078 event signed by the gallery owner with `d`-tag `zap-gallery-sellers`
+4. Pass status is read back from relays via `GET /api/seller-pass/verify?pubkey=…`, so it survives deploys with no database
 
 ## Routes
 
@@ -39,14 +37,14 @@ Set `PUBLIC_SINGLE_OWNER_MODE=true` to run a personal gallery: `/` shows the own
 | `/<npub>` | A specific user's gallery |
 | `/image/<pubkey>/<slug>` | Single-image purchase page |
 | `/admin` | Owner / seller dashboard (upload, manage listings, deliver keys) |
-| `/pro` | Pro upgrade page (invoice + payment) |
+| `/sell` | Seller pass page (invoice + payment) |
 | `/terms`, `/privacy` | Legal pages |
 
 ## Tech Stack
 
 - **Framework**: SvelteKit (Svelte 5 runes), Tailwind CSS v4, adapter-node
 - **Nostr**: NDK (`@nostr-dev-kit/ndk` + `ndk-svelte`) for relay communication
-- **Wallet**: NDK Wallet for NWC (NIP-47) zap payments and Pro upgrade invoices
+- **Wallet**: NDK Wallet for NWC (NIP-47) zap payments and seller pass invoices
 - **Media**: Blossom servers for image storage (blossom.nostr.build, blossom.band)
 - **Encryption**: Web Crypto API (AES-256-GCM)
 - **Auth**: NIP-07 browser extensions (Alby, nos2x) or nsec entry
@@ -56,7 +54,7 @@ Set `PUBLIC_SINGLE_OWNER_MODE=true` to run a personal gallery: `/` shows the own
 - Node.js 22+
 - A Nostr keypair (hex pubkey for the gallery owner)
 - A NIP-07 browser extension for authentication
-- An NWC-compatible Lightning wallet (required for Pro upgrade invoices and zap payments)
+- An NWC-compatible Lightning wallet (required for seller pass invoices and zap payments)
 
 ## Configuration
 
@@ -68,17 +66,17 @@ cp .env.example .env
 
 | Variable | Description |
 |----------|-------------|
-| `PUBLIC_GALLERY_OWNER_PUBKEY` | Hex pubkey of the gallery owner; signs the seller registry and is implicitly Pro |
+| `PUBLIC_GALLERY_OWNER_PUBKEY` | Hex pubkey of the gallery owner; signs the seller registry and never needs a seller pass |
 | `PUBLIC_BLOSSOM_SERVERS` | Comma-separated Blossom server URLs for thumbnails |
 | `PUBLIC_BLOSSOM_ENCRYPTED_SERVERS` | Blossom servers for encrypted full-res files; must accept `application/octet-stream` (default: `https://nostr.download`) |
 | `PUBLIC_BLOSSOM_MAX_FILE_SIZE_MB` | Max upload size in MiB (default: 20) |
 | `PUBLIC_RELAY_URLS` | Comma-separated Nostr relay WebSocket URLs |
-| `PUBLIC_PRO_PRICE_SATS` | Price of a Pro upgrade in sats (default: 1000) |
-| `PUBLIC_PRO_DURATION_DAYS` | Duration of a Pro upgrade in days (default: 30) |
-| `PUBLIC_FREE_UPLOAD_LIMIT` | Max listings allowed on the free tier (default: 1) |
-| `PUBLIC_SINGLE_OWNER_MODE` | `true` to serve only the owner's gallery at `/` and disable other sellers and Pro (default: `false`) |
+| `PUBLIC_SELLER_PASS_PRICE_SATS` | Price of a seller pass in sats (default: 1000) |
+| `PUBLIC_SELLER_PASS_DURATION_DAYS` | How long a seller pass lasts, in days (default: 30) |
+| `PUBLIC_FREE_UPLOAD_LIMIT` | Max listings for users without a seller pass (default: 1) |
+| `PUBLIC_SINGLE_OWNER_MODE` | `true` to serve only the owner's gallery at `/` and disable other sellers and seller passes (default: `false`) |
 | `GALLERY_OWNER_NSEC` | Owner's nsec private key (server-side only); used to sign the seller registry |
-| `NWC_URI` | Nostr Wallet Connect URI; used to issue and look up Pro invoices |
+| `NWC_URI` | Nostr Wallet Connect URI; used to issue and look up seller pass and image invoices |
 
 ## Development
 

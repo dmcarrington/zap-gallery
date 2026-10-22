@@ -5,7 +5,7 @@
 		beyond what's needed for short-lived payment processing.
 	</p>
 	<p class="text-gray-300 mb-4">
-		Your nostr pubkey, listings, and Pro registration are stored on public Nostr relays.
+		Your nostr pubkey, listings, and seller pass registration are stored on public Nostr relays.
 		Anyone can read them. Lightning invoices are routed through the gallery's wallet service
 		and may be visible to that wallet.
 	</p>

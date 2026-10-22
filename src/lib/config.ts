@@ -25,13 +25,14 @@ export const RELAY_URLS = (
 	.split(',')
 	.map((url) => url.trim());
 
-// Pro tier pricing & duration. Public so /pro can render the price.
-export const PRO_PRICE_SATS = parseInt(env.PUBLIC_PRO_PRICE_SATS ?? '1000', 10);
-export const PRO_DURATION_DAYS = parseInt(env.PUBLIC_PRO_DURATION_DAYS ?? '30', 10);
+// Seller pass: what another user pays the operator to sell without limits on
+// this instance. Public so /sell can render the price.
+export const SELLER_PASS_PRICE_SATS = parseInt(env.PUBLIC_SELLER_PASS_PRICE_SATS ?? '1000', 10);
+export const SELLER_PASS_DURATION_DAYS = parseInt(env.PUBLIC_SELLER_PASS_DURATION_DAYS ?? '30', 10);
 
-// Free-tier upload limit. Non-Pro users may publish at most this many listings.
+// Free-tier upload limit. Sellers without a pass may publish at most this many listings.
 export const FREE_UPLOAD_LIMIT = parseInt(env.PUBLIC_FREE_UPLOAD_LIMIT ?? '1', 10);
 
 // Single-owner mode: the instance serves only the owner's gallery at `/`.
-// Other sellers, per-npub galleries and the Pro tier are switched off.
+// Other sellers, per-npub galleries and seller passes are switched off.
 export const SINGLE_OWNER_MODE = env.PUBLIC_SINGLE_OWNER_MODE === 'true';

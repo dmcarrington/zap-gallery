@@ -1,6 +1,6 @@
 /**
  * SvelteKit param matcher: only accept strings that look like a NIP-19 npub.
- * Used by the /[npub=npub] route so static paths (/admin, /pro, /terms, …)
+ * Used by the /[npub=npub] route so static paths (/admin, /sell, /terms, …)
  * take precedence and arbitrary slugs don't collide with the gallery route.
  *
  * Validity is checked against the bech32 character set and the standard

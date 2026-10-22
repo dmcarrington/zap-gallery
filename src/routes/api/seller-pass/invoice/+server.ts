@@ -1,14 +1,14 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { isNwcConfigured, makeInvoice } from '$lib/server/nwc';
-import { recordProInvoice } from '$lib/server/proPayments';
-import { PRO_PRICE_SATS, PRO_DURATION_DAYS, SINGLE_OWNER_MODE } from '$lib/config';
+import { recordSellerPassInvoice } from '$lib/server/sellerPassPayments';
+import { SELLER_PASS_PRICE_SATS, SELLER_PASS_DURATION_DAYS, SINGLE_OWNER_MODE } from '$lib/config';
 
 const PUBKEY_HEX = /^[0-9a-f]{64}$/i;
 const INVOICE_TTL_SECS = 15 * 60; // 15 minutes to pay
 
 /**
- * Create a Lightning invoice for a Pro upgrade tied to a buyer pubkey.
+ * Create a Lightning invoice for a seller pass tied to a buyer pubkey.
  * Body: { pubkey: string }
  * Returns: { bolt11, paymentHash, amountSats, expiresAt }
  */
@@ -25,13 +25,13 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	try {
-		const description = `Zap Gallery Pro upgrade (${PRO_DURATION_DAYS}d) — ${pubkey.slice(0, 8)}…`;
-		const invoice = await makeInvoice(PRO_PRICE_SATS * 1000, description);
+		const description = `Zap Gallery seller pass (${SELLER_PASS_DURATION_DAYS}d) — ${pubkey.slice(0, 8)}…`;
+		const invoice = await makeInvoice(SELLER_PASS_PRICE_SATS * 1000, description);
 
 		const now = Math.floor(Date.now() / 1000);
-		recordProInvoice(invoice.payment_hash, {
+		recordSellerPassInvoice(invoice.payment_hash, {
 			pubkey,
-			amountSats: PRO_PRICE_SATS,
+			amountSats: SELLER_PASS_PRICE_SATS,
 			createdAt: now,
 			expiresAt: now + INVOICE_TTL_SECS
 		});
@@ -39,11 +39,11 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({
 			bolt11: invoice.invoice,
 			paymentHash: invoice.payment_hash,
-			amountSats: PRO_PRICE_SATS,
+			amountSats: SELLER_PASS_PRICE_SATS,
 			expiresAt: now + INVOICE_TTL_SECS
 		});
 	} catch (err) {
-		console.error('[api/pro/invoice]', err);
+		console.error('[api/seller-pass/invoice]', err);
 		return error(502, 'Failed to create invoice');
 	}
 };
