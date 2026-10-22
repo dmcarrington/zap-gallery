@@ -42,7 +42,7 @@ export async function getServerNdk(): Promise<{ ndk: NDK; signer: NDKPrivateKeyS
  */
 export async function fetchEventsWithTimeout(
 	ndk: NDK,
-	filter: NDKFilter,
+	filter: NDKFilter | NDKFilter[],
 	timeoutMs: number
 ): Promise<NDKEvent[]> {
 	const events = await Promise.race([

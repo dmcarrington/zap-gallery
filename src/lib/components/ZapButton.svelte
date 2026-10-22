@@ -3,7 +3,8 @@
 	import { getWallet } from '$lib/stores/wallet.svelte';
 	import type { GalleryImage } from '$lib/nostr/events';
 	import { watchZapReceipts } from '$lib/nostr/zaps';
-	import { saveInvoiceToken } from '$lib/receipts';
+	import { getZapEndpoint, requestZapInvoice } from '$lib/nostr/zapPurchase';
+	import { saveInvoiceToken, saveZapPurchase } from '$lib/receipts';
 	import QRCode from 'qrcode';
 	import { onMount } from 'svelte';
 
@@ -12,7 +13,8 @@
 		onPurchased
 	}: {
 		image: GalleryImage;
-		onPurchased?: (token: string) => void;
+		/** token is null for zap purchases, which the server re-verifies from relays */
+		onPurchased?: (token: string | null) => void;
 	} = $props();
 
 	const auth = getAuth();
@@ -26,6 +28,11 @@
 	let unwatch: (() => void) | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 	let qrDataUrl = $state<string | null>(null);
+	let stalled = $state(false);
+	let stallTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Zap receipts usually land within seconds, but some providers are slow
+	const RECEIPT_STALL_MS = 45_000;
 
 	$effect(() => {
 		if (bolt11 && zapState === 'waiting') {
@@ -45,8 +52,88 @@
 		return () => {
 			if (unwatch) unwatch();
 			if (pollTimer) clearInterval(pollTimer);
+			if (stallTimer) clearTimeout(stallTimer);
 		};
 	});
+
+	async function handleZap() {
+		if (!auth.pubkey || !image.eventId) return;
+
+		error = null;
+		bolt11 = null;
+		token = null;
+		stalled = false;
+		zapState = 'zapping';
+
+		try {
+			const endpoint = await getZapEndpoint(image.publisherPubkey);
+			if (endpoint) {
+				await startZapPurchase(endpoint);
+			} else {
+				await startInvoicePurchase();
+			}
+		} catch (err) {
+			console.error('[zap] error:', err);
+			error = err instanceof Error ? err.message : 'Zap failed';
+			zapState = 'idle';
+		}
+	}
+
+	/** Pay the seller directly with a NIP-57 zap; the receipt is the proof of purchase. */
+	async function startZapPurchase(endpoint: Parameters<typeof requestZapInvoice>[1]) {
+		const invoice = await requestZapInvoice(image, endpoint);
+		bolt11 = invoice;
+
+		unwatch = watchZapReceipts(image.eventId, (receipt) => {
+			if (receipt.bolt11 === invoice) {
+				if (auth.pubkey) saveZapPurchase(auth.pubkey, image);
+				markPurchased();
+			}
+		});
+		stallTimer = setTimeout(() => (stalled = true), RECEIPT_STALL_MS);
+
+		payInvoice(invoice, false);
+	}
+
+	/** Fallback for sellers without a zap-capable Lightning address: the gallery's NWC wallet. */
+	async function startInvoicePurchase() {
+		let invoice;
+		try {
+			invoice = await createServerInvoice();
+		} catch (err) {
+			if (err instanceof Error && err.message.includes('503')) {
+				throw new Error("This seller can't receive zaps yet, so this image can't be bought.");
+			}
+			throw err;
+		}
+		bolt11 = invoice.bolt11;
+		token = invoice.token;
+		if (auth.pubkey) saveInvoiceToken(auth.pubkey, image, invoice.token);
+
+		startPolling();
+		payInvoice(invoice.bolt11, true);
+	}
+
+	/**
+	 * Pay with the buyer's connected wallet, or show the invoice to pay manually.
+	 * A preimage only proves payment for the gallery's own invoice; a zap still
+	 * waits for its receipt.
+	 */
+	function payInvoice(pr: string, preimageCompletes: boolean) {
+		if (wallet.isReady && wallet.wallet?.lnPay) {
+			zapState = 'paying';
+			wallet.wallet
+				.lnPay({ pr })
+				.then((res) => {
+					if (res?.preimage && preimageCompletes) markPurchased();
+				})
+				.catch((err) => {
+					console.warn('[zap] NWC pay error (payment may have succeeded):', err);
+				});
+		} else {
+			zapState = 'waiting';
+		}
+	}
 
 	async function createServerInvoice(): Promise<{ bolt11: string; token: string }> {
 		const res = await fetch(`/api/invoice/${image.slug}`, {
@@ -60,64 +147,17 @@
 
 		if (!res.ok) {
 			const text = await res.text();
-			throw new Error(`Failed to create invoice: ${text}`);
+			throw new Error(`Failed to create invoice (${res.status}): ${text}`);
 		}
 
 		return res.json();
-	}
-
-	async function handleZap() {
-		if (!auth.pubkey || !image.eventId) return;
-
-		error = null;
-		bolt11 = null;
-		token = null;
-		zapState = 'zapping';
-
-		try {
-			const invoice = await createServerInvoice();
-			bolt11 = invoice.bolt11;
-			token = invoice.token;
-			saveInvoiceToken(auth.pubkey, image, invoice.token);
-
-			startPolling();
-
-			// Also watch for zap receipts as supplementary signal
-			if (image.eventId) {
-				unwatch = watchZapReceipts(image.eventId, (receipt) => {
-					if (receipt.senderPubkey === auth.pubkey && receipt.amountSats >= image.priceSats) {
-						markPurchased();
-					}
-				});
-			}
-
-			// Try auto-pay via NWC wallet
-			if (wallet.isReady && wallet.wallet?.lnPay) {
-				zapState = 'paying';
-
-				wallet.wallet.lnPay({ pr: invoice.bolt11 }).then((res) => {
-					if (res?.preimage) {
-						markPurchased();
-					}
-				}).catch((err) => {
-					console.warn('[zap] NWC pay error (payment may have succeeded):', err);
-				});
-			} else {
-				// No wallet — show invoice for manual payment
-				zapState = 'waiting';
-			}
-		} catch (err) {
-			console.error('[zap] error:', err);
-			error = err instanceof Error ? err.message : 'Zap failed';
-			zapState = 'idle';
-		}
 	}
 
 	function markPurchased() {
 		if (zapState === 'purchased') return;
 		hasPurchased = true;
 		zapState = 'purchased';
-		if (token) onPurchased?.(token);
+		onPurchased?.(token);
 		if (unwatch) {
 			unwatch();
 			unwatch = null;
@@ -125,6 +165,10 @@
 		if (pollTimer) {
 			clearInterval(pollTimer);
 			pollTimer = null;
+		}
+		if (stallTimer) {
+			clearTimeout(stallTimer);
+			stallTimer = null;
 		}
 	}
 
@@ -152,9 +196,18 @@
 	}
 </script>
 
+{#snippet stalledNotice()}
+	<p class="text-xs text-gray-400 text-center">
+		Still waiting for the zap receipt. If your wallet shows the payment as sent,
+		<button onclick={markPurchased} class="underline hover:text-white cursor-pointer">
+			try the download
+		</button>.
+	</p>
+{/snippet}
+
 {#if zapState === 'purchased' || hasPurchased}
 	<button
-		onclick={() => { if (token) onPurchased?.(token); }}
+		onclick={() => onPurchased?.(token)}
 		class="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-lg transition-colors cursor-pointer"
 	>
 		Download Full Resolution
@@ -174,6 +227,9 @@
 	<div class="w-full text-center py-3 space-y-2">
 		<p class="text-yellow-400 text-sm font-medium">Payment sent, waiting for confirmation...</p>
 		<p class="text-xs text-gray-500">This may take a few moments</p>
+		{#if stalled}
+			{@render stalledNotice()}
+		{/if}
 	</div>
 {:else if zapState === 'waiting' && bolt11}
 	<div class="space-y-3">
@@ -202,6 +258,9 @@
 		<p class="text-xs text-gray-500 text-center">
 			Waiting for payment confirmation...
 		</p>
+		{#if stalled}
+			{@render stalledNotice()}
+		{/if}
 	</div>
 {:else}
 	<div class="space-y-2">

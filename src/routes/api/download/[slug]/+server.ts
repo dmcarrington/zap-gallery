@@ -4,6 +4,7 @@ import { getServerNdk, fetchEventsWithTimeout } from '$lib/server/ndk';
 import NDK, { NDKEvent, NDKUser, NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
 import { verifyInvoiceToken, isInvoiceSettled } from '$lib/server/payments';
 import { fetchListing, isPubkeyHex } from '$lib/server/listings';
+import { hasVerifiedZap } from '$lib/server/zapReceipts';
 import type { GalleryImage } from '$lib/nostr/events';
 
 const KIND_APP_DATA = 30078;
@@ -20,6 +21,9 @@ interface ImageSecret {
  * Release the full-res secret for an image once payment is verified.
  * Body: { pubkey: string (buyer), sellerPubkey: string, token?: string }
  * Returns: { url, mimeType, key? } — `key` decrypts the blob at `url`.
+ * When paid by zap: { encrypted, sender } — the same JSON, NIP-44 encrypted to
+ * the buyer. A zap is public, so anyone could name its buyer in the request;
+ * only the buyer can read the reply.
  */
 export const POST: RequestHandler = async ({ params, request }) => {
 	const { slug } = params;
@@ -61,9 +65,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		}
 	}
 
-	// 3. Legacy fallback: check zap receipts on relays
+	// 3. Otherwise look for a verified NIP-57 zap from the buyer to the seller
+	let paidByZap = false;
 	if (!paymentVerified) {
-		paymentVerified = await hasZapReceipt(ndk, listing, buyerPubkey);
+		paidByZap = await hasVerifiedZap(ndk, listing, buyerPubkey);
+		paymentVerified = paidByZap;
 	}
 
 	if (!paymentVerified) {
@@ -82,40 +88,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	});
 
 	// 6. Return the secret to the buyer immediately
-	return json({ url: secret.url, mimeType: secret.mimeType, key: secret.key });
-};
-
-async function hasZapReceipt(
-	ndk: NDK,
-	listing: GalleryImage,
-	buyerPubkey: string
-): Promise<boolean> {
-	const zapReceipts = await fetchEventsWithTimeout(
-		ndk,
-		{ kinds: [9735], '#e': [listing.eventId] },
-		5000
-	);
-
-	for (const receipt of zapReceipts) {
-		const descTag = receipt.tags.find((t) => t[0] === 'description');
-		if (!descTag?.[1]) continue;
-
-		try {
-			const zapRequest = JSON.parse(descTag[1]);
-			const senderPubkey = zapRequest.pubkey;
-			const amountTag = zapRequest.tags?.find((t: string[]) => t[0] === 'amount');
-			const amountMsats = amountTag ? parseInt(amountTag[1], 10) : 0;
-			const amountSats = Math.floor(amountMsats / 1000);
-
-			if (senderPubkey === buyerPubkey && amountSats >= listing.priceSats) {
-				return true;
-			}
-		} catch {
-			continue;
-		}
+	const reply = { url: secret.url, mimeType: secret.mimeType, key: secret.key };
+	if (paidByZap) {
+		const buyer = new NDKUser({ pubkey: buyerPubkey });
+		const encrypted = await signer.encrypt(buyer, JSON.stringify(reply), 'nip44');
+		return json({ encrypted, sender: (await signer.user()).pubkey });
 	}
-	return false;
-}
+	return json(reply);
+};
 
 async function fetchImageSecret(
 	ndk: NDK,
