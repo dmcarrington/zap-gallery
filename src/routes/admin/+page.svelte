@@ -4,6 +4,7 @@
 	import { NDKEvent } from '@nostr-dev-kit/ndk';
 	import { parseImageEvent, type GalleryImage, KIND_IMAGE_LISTING } from '$lib/nostr/events';
 	import { uploadAndPublish } from '$lib/upload';
+	import { getZapEndpoint } from '$lib/nostr/zapPurchase';
 	import { FREE_UPLOAD_LIMIT, SINGLE_OWNER_MODE } from '$lib/config';
 	import { nip19 } from 'nostr-tools';
 
@@ -36,8 +37,17 @@
 		!SINGLE_OWNER_MODE && !auth.hasSellerPass && images.length >= FREE_UPLOAD_LIMIT
 	);
 
+	// Buyers pay sellers by zap, so check the seller's Lightning address can receive one
+	let canReceiveZaps = $state<boolean | null>(null);
+
 	$effect(() => {
 		if (auth.pubkey) loadOwnImages();
+	});
+
+	$effect(() => {
+		const pubkey = auth.pubkey;
+		canReceiveZaps = null;
+		if (pubkey) getZapEndpoint(pubkey).then((endpoint) => (canReceiveZaps = !!endpoint));
 	});
 
 	async function loadOwnImages() {
@@ -163,6 +173,13 @@
 
 		<section class="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-8">
 			<h2 class="text-lg font-semibold text-white mb-4">Upload new image</h2>
+			{#if canReceiveZaps === false}
+				<div class="bg-amber-500/10 border border-amber-500/40 text-amber-200 text-sm p-3 rounded mb-4">
+					Buyers pay you by zap, but your Nostr profile has no zap-capable Lightning address.
+					Add a <code>lud16</code> address (e.g. from Alby, Primal or Coinos) to your profile so buyers
+					can pay you directly. Until then, sales only work if this gallery has its own wallet.
+				</div>
+			{/if}
 			{#if atFreeLimit}
 				<div class="bg-amber-500/10 border border-amber-500/40 text-amber-200 text-sm p-3 rounded mb-4">
 					You've used the free-tier limit ({FREE_UPLOAD_LIMIT}). Delete an existing listing or

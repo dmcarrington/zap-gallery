@@ -31,12 +31,15 @@ Nostr Zap Gallery — a SvelteKit photo gallery where visitors browse thumbnails
 - `src/lib/crypto.ts` — AES-256-GCM encrypt/decrypt helpers
 - `src/lib/blossom.ts` — Blossom upload with BUD-06 preflight and size validation
 - `src/lib/nostr/events.ts` — Event kind constants and gallery image parsing
-- `src/lib/nostr/zaps.ts` — Zap receipt verification and monitoring (NIP-57)
+- `src/lib/nostr/zaps.ts` — Zap receipt parsing and monitoring (NIP-57)
+- `src/lib/nostr/lnurl.ts` — Lightning address (lud16) → LNURL-pay zap endpoint, shared by client and server
+- `src/lib/nostr/zapPurchase.ts` — Buyer signs a zap request and fetches the seller's invoice
+- `src/lib/server/zapReceipts.ts` — Verifies a zap purchase: receipt signed by the seller's provider, buyer-signed request for the listing, invoice amount (not the description hash — major providers don't commit to it)
 - `src/lib/nostr/keys.ts` — Image secret storage (kind 30078: AES key + ciphertext URL)
 - `src/lib/upload.ts` — Client-side thumbnail, encrypt, Blossom upload and listing publish
 - `src/lib/receipts.ts` — Buyer's invoice tokens in localStorage (resume / re-download)
 - `src/lib/server/listings.ts` — Server-side listing lookup (source of truth for price)
-- `src/lib/server/payments.ts` — HMAC-signed invoice tokens; settlement re-checked over NWC (no server state)
+- `src/lib/server/payments.ts` — HMAC-signed invoice tokens for the NWC fallback; settlement re-checked over NWC (no server state)
 - `src/lib/stores/auth.svelte.ts` — Reactive auth state (login/logout/isOwner)
 - `src/lib/stores/wallet.svelte.ts` — NWC wallet connection state
 - `src/lib/ndk-wallet.d.ts` — Type declarations for ndk-wallet (ships source without dist)
@@ -45,8 +48,8 @@ Nostr Zap Gallery — a SvelteKit photo gallery where visitors browse thumbnails
 
 1. Seller uploads image → thumbnail uploaded unencrypted, full-res encrypted in the browser with AES-256-GCM; only ciphertext goes to Blossom
 2. AES key + ciphertext URL stored in a kind 30078 event signed by the seller, NIP-04 encrypted to the gallery owner's pubkey. The listing (kind 30024) carries no full-res URL
-3. Buyer requests an invoice (`POST /api/invoice/[slug]`) → server reads the price from the seller's listing, creates the invoice via NWC and returns an HMAC-signed token binding payment hash, slug, seller, buyer and amount
-4. Buyer pays → `POST /api/download/[slug]` verifies the token and re-checks settlement with the wallet (fallback: kind 9735 zap receipt), decrypts the secret with `GALLERY_OWNER_NSEC` and returns it; a NIP-04 DM (kind 4) with the same secret is sent in the background
+3. Buyer pays. **Default:** a NIP-57 zap straight to the seller's lud16 — the buyer signs a kind 9734 request tagging the listing (`a` and `e`) and pays the seller's provider. **Fallback** (seller has no zap-capable address, `NWC_URI` set): `POST /api/invoice/[slug]` prices from the listing, creates the invoice via the gallery's NWC wallet and returns an HMAC-signed token binding payment hash, slug, seller, buyer and amount
+4. `POST /api/download/[slug]` verifies the token and re-checks settlement over NWC, or finds a kind 9735 receipt signed by the seller provider's `nostrPubkey` whose buyer-signed request names the listing and whose invoice covers the price. It decrypts the secret with `GALLERY_OWNER_NSEC` and returns it — NIP-44 encrypted to the buyer for zap purchases, since anyone could name a public zap's buyer; a NIP-04 DM (kind 4) with the secret is sent in the background
 5. Buyer's client downloads the encrypted blob from Blossom and decrypts it locally
 
 Listings published before encryption was restored carry a public `full_res_url` tag and are served as-is.

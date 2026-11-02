@@ -3,6 +3,8 @@
 	import { getAuth } from '$lib/stores/auth.svelte';
 	import { retrieveOwnImageSecret, type ImageSecret } from '$lib/nostr/keys';
 	import { decryptBlob } from '$lib/crypto';
+	import { ndk } from '$lib/ndk';
+	import { NDKUser } from '@nostr-dev-kit/ndk';
 	import { onDestroy } from 'svelte';
 
 	let { image, token = null }: { image: GalleryImage; token?: string | null } = $props();
@@ -17,6 +19,21 @@
 	onDestroy(() => {
 		if (objectUrl) URL.revokeObjectURL(objectUrl);
 	});
+
+	/** Zap purchases come back NIP-44 encrypted to the buyer, so only they can read the key. */
+	async function decryptReply(reply: { encrypted: string; sender: string }): Promise<ImageSecret> {
+		if (!ndk.signer) throw new Error('Log in again to decrypt your download');
+		try {
+			const plain = await ndk.signer.decrypt(
+				new NDKUser({ pubkey: reply.sender }),
+				reply.encrypted,
+				'nip44'
+			);
+			return JSON.parse(plain);
+		} catch {
+			throw new Error("Your Nostr signer couldn't decrypt the download key (NIP-44 support needed)");
+		}
+	}
 
 	/** Seller reads their own kind 30078 secret; legacy listings carry a public URL. */
 	async function fetchOwnSecret(): Promise<ImageSecret | null> {
@@ -64,7 +81,8 @@
 					return;
 				}
 
-				secret = await res.json();
+				const reply = await res.json();
+				secret = reply.encrypted ? await decryptReply(reply) : reply;
 			}
 
 			if (!secret) return;
