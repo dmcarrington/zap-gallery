@@ -1,8 +1,23 @@
 <script lang="ts">
 	import { getAuth, login, logout } from '$lib/stores/auth.svelte';
 	import { nip19 } from 'nostr-tools';
+	import { fetchProfile, type Profile } from '$lib/nostr/profile';
 
 	const auth = getAuth();
+
+	let profile = $state<Profile>({});
+	let pictureFailed = $state(false);
+
+	$effect(() => {
+		const pubkey = auth.pubkey;
+		profile = {};
+		pictureFailed = false;
+		if (!pubkey) return;
+		fetchProfile(pubkey).then((p) => {
+			// Ignore a late answer for an account that has since logged out or changed
+			if (auth.pubkey === pubkey) profile = p;
+		});
+	});
 
 	let error = $state<string | null>(null);
 	let loggingIn = $state(false);
@@ -43,7 +58,22 @@
 
 {#if auth.isLoggedIn && auth.pubkey}
 	<div class="flex items-center gap-2">
-		<span class="text-sm text-gray-300 font-mono">{truncatedNpub(auth.pubkey)}</span>
+		<span class="flex items-center gap-2" title={nip19.npubEncode(auth.pubkey)}>
+			{#if profile.picture && !pictureFailed}
+				<img
+					src={profile.picture}
+					alt=""
+					referrerpolicy="no-referrer"
+					onerror={() => (pictureFailed = true)}
+					class="h-8 w-8 rounded-full object-cover bg-gray-800"
+				/>
+			{/if}
+			{#if profile.name}
+				<span class="text-sm text-gray-300 max-w-40 truncate">{profile.name}</span>
+			{:else}
+				<span class="text-sm text-gray-300 font-mono">{truncatedNpub(auth.pubkey)}</span>
+			{/if}
+		</span>
 		<button
 			onclick={logout}
 			class="text-sm text-gray-400 hover:text-white transition-colors cursor-pointer"
@@ -59,7 +89,7 @@
 				disabled={loggingIn}
 				class="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors cursor-pointer"
 			>
-				{loggingIn ? 'Connecting...' : 'Login with Nostr'}
+				{loggingIn ? 'Connecting...' : 'Login with Extension'}
 			</button>
 			<button
 				onclick={() => (showNsec = !showNsec)}
