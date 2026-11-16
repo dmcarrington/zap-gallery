@@ -1,5 +1,10 @@
 import { env } from '$env/dynamic/public';
 
+// Display name for this instance. Branding only: Nostr tags and localStorage
+// keys keep their historical `zap-gallery` namespace so existing listings,
+// seller passes and purchases stay readable.
+export const APP_NAME = env.PUBLIC_APP_NAME ?? 'Keylight';
+
 export const GALLERY_OWNER_PUBKEY = env.PUBLIC_GALLERY_OWNER_PUBKEY ?? '';
 
 export const BLOSSOM_SERVERS = (

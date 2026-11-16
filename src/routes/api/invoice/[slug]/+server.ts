@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { isNwcConfigured, makeInvoice } from '$lib/server/nwc';
 import { signInvoiceToken } from '$lib/server/payments';
 import { fetchListing, isPubkeyHex } from '$lib/server/listings';
+import { APP_NAME } from '$lib/config';
 
 /**
  * Create a Lightning invoice for an image, priced from the seller's listing.
@@ -39,7 +40,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 
 	let result;
 	try {
-		result = await makeInvoice(listing.priceSats * 1000, `Zap Gallery: ${slug}`);
+		result = await makeInvoice(listing.priceSats * 1000, `${APP_NAME}: ${slug}`);
 	} catch (err) {
 		console.error('[api/invoice] makeInvoice failed:', err);
 		return error(502, 'Failed to create invoice from wallet');

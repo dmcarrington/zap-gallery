@@ -1,4 +1,4 @@
-# Nostr Zap Gallery
+# Keylight
 
 A SvelteKit photo gallery where every Nostr user gets their own gallery and visitors send Lightning zaps to unlock full-resolution image downloads. Zero external infrastructure: all data lives on Nostr relays (events) and Blossom media servers (files).
 
@@ -28,7 +28,7 @@ Set `PUBLIC_SINGLE_OWNER_MODE=true` to run a personal gallery: `/` shows the own
 
 1. A user visits `/sell` and clicks **Get a seller pass** — the server creates a Lightning invoice via NWC (`POST /api/seller-pass/invoice`)
 2. They pay the BOLT11 invoice (QR code or copy-paste); the page polls `POST /api/seller-pass/verify`
-3. On settlement, the server appends/extends their pubkey in the **seller registry** — a parameterised replaceable kind 30078 event signed by the gallery owner with `d`-tag `zap-gallery-sellers`
+3. On settlement, the server appends/extends their pubkey in the **seller registry** — a parameterised replaceable kind 30078 event signed by the gallery owner with `d`-tag `zap-gallery-sellers` (the tag keeps its original namespace so passes survive the rename)
 4. Pass status is read back from relays via `GET /api/seller-pass/verify?pubkey=…`, so it survives deploys with no database
 
 ## Routes
@@ -69,6 +69,7 @@ cp .env.example .env
 
 | Variable | Description |
 |----------|-------------|
+| `PUBLIC_APP_NAME` | Display name shown in the header, page title, footer and Lightning invoice descriptions (default: `Keylight`) |
 | `PUBLIC_GALLERY_OWNER_PUBKEY` | Hex pubkey of the gallery owner; signs the seller registry and never needs a seller pass |
 | `PUBLIC_BLOSSOM_SERVERS` | Comma-separated Blossom server URLs for thumbnails |
 | `PUBLIC_BLOSSOM_ENCRYPTED_SERVERS` | Blossom servers for encrypted full-res files; must accept `application/octet-stream` (default: `https://nostr.download`) |
@@ -114,8 +115,8 @@ The server listens on port 3000 by default (set `PORT` to override).
 ### Docker
 
 ```sh
-docker build -t zap-gallery .
-docker run -p 3000:3000 --env-file .env zap-gallery
+docker build -t keylight .
+docker run -p 3000:3000 --env-file .env keylight
 ```
 
 ## Nostr Event Kinds
@@ -123,6 +124,6 @@ docker run -p 3000:3000 --env-file .env zap-gallery
 | Kind | Purpose |
 |------|---------|
 | 30024 | Image listing (title, price, Blossom URLs) |
-| 30078 | App-specific data — encrypted AES keys (`d`-tag: `zap-gallery-key:{slug}`) and the seller registry (`d`-tag: `zap-gallery-sellers`) |
+| 30078 | App-specific data — encrypted AES keys (`d`-tag: `zap-gallery-key:{slug}`) and the seller registry (`d`-tag: `zap-gallery-sellers`). These keep their original namespace for backwards compatibility |
 | 9734 / 9735 | Zap request (signed by the buyer) and zap receipt (signed by the seller's Lightning provider) — proof of purchase |
 | 4 | NIP-04 encrypted DMs (key delivery to buyers) |

@@ -2,6 +2,7 @@
 	import { nip19 } from 'nostr-tools';
 	import { getAuth } from '$lib/stores/auth.svelte';
 	import {
+		APP_NAME,
 		FREE_UPLOAD_LIMIT,
 		SELLER_PASS_PRICE_SATS,
 		SELLER_PASS_DURATION_DAYS,
@@ -27,7 +28,7 @@
 	<GalleryView pubkey={GALLERY_OWNER_PUBKEY || null} title="Gallery" />
 {:else}
 	<div class="container mx-auto px-4 py-12 max-w-2xl text-center">
-		<h1 class="text-3xl font-bold text-white mb-3">⚡ Zap Gallery</h1>
+		<h1 class="text-3xl font-bold text-white mb-3">⚡ {APP_NAME}</h1>
 		<p class="text-gray-400 mb-10">
 			Personal photo galleries on Nostr. Each user has a gallery at
 			<code class="text-purple-300">/{`<npub>`}</code>; visitors pay sats to download

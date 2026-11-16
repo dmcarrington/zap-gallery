@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Nostr Zap Gallery — a SvelteKit photo gallery where visitors browse thumbnails and send Lightning zaps via Nostr to unlock full-resolution image downloads. Zero external infrastructure: all data lives on Nostr relays (events) and Blossom media servers (files).
+Keylight — a SvelteKit photo gallery where visitors browse thumbnails and send Lightning zaps via Nostr to unlock full-resolution image downloads. Zero external infrastructure: all data lives on Nostr relays (events) and Blossom media servers (files).
 
 ## Build & Dev Commands
 
@@ -63,7 +63,7 @@ Listings published before encryption was restored carry a public `full_res_url` 
 | Kind | Purpose |
 |------|---------|
 | 30024 | Image listing (per-image: title, price, Blossom URLs) |
-| 30078 | App-specific data (encrypted AES keys, d-tag: `zap-gallery-key:{slug}`) |
+| 30078 | App-specific data (encrypted AES keys, d-tag: `zap-gallery-key:{slug}`). The `zap-gallery-*` tag namespace predates the Keylight rename and must not change |
 | 9735 | Zap receipts |
 | 4 | NIP-04 encrypted DMs (key delivery to buyers) |
 
@@ -71,9 +71,11 @@ Listings published before encryption was restored carry a public `full_res_url` 
 
 See `.env.example`. All prefixed with `PUBLIC_` for SvelteKit client-side access.
 
+`PUBLIC_APP_NAME` is the display name (default `Keylight`) — branding only. Never rename the `zap-gallery-*` Nostr d-tags, `zap-gallery:` localStorage keys or the HMAC salt: existing listings, seller passes and purchases depend on them.
+
 `PUBLIC_SINGLE_OWNER_MODE=true` turns an instance into a personal gallery: `/` renders the owner's gallery (`GalleryView`), other npubs and `/sell` 404, and `fetchListing` refuses non-owner sellers so invoice/download only sell the owner's listings.
 
 ## Deployment
 
 - **Node**: `npm run build && node build` (PORT defaults to 3000)
-- **Docker**: `docker build -t zap-gallery . && docker run -p 3000:3000 --env-file .env zap-gallery`
+- **Docker**: `docker build -t keylight . && docker run -p 3000:3000 --env-file .env keylight`

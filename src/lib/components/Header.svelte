@@ -2,7 +2,7 @@
 	import LoginButton from './LoginButton.svelte';
 	import { getAuth } from '$lib/stores/auth.svelte';
 	import { nip19 } from 'nostr-tools';
-	import { SINGLE_OWNER_MODE } from '$lib/config';
+	import { APP_NAME, SINGLE_OWNER_MODE } from '$lib/config';
 
 	const auth = getAuth();
 
@@ -21,7 +21,7 @@
 	<nav class="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
 		<div class="flex items-center gap-6">
 			<a href="/" class="text-xl font-bold text-white hover:text-purple-400 transition-colors">
-				Zap Gallery
+				{APP_NAME}
 			</a>
 			{#if SINGLE_OWNER_MODE}
 				{#if auth.isOwner}

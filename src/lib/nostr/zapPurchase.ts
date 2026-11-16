@@ -7,7 +7,7 @@
 import { NDKEvent } from '@nostr-dev-kit/ndk';
 import { decode } from 'light-bolt11-decoder';
 import { ndk } from '$lib/ndk';
-import { RELAY_URLS } from '$lib/config';
+import { APP_NAME, RELAY_URLS } from '$lib/config';
 import { KIND_IMAGE_LISTING, type GalleryImage } from './events';
 import { fetchZapEndpoint, invoiceAmountMsats, profileLud16, type ZapEndpoint } from './lnurl';
 
@@ -33,7 +33,7 @@ export async function requestZapInvoice(image: GalleryImage, endpoint: ZapEndpoi
 
 	const request = new NDKEvent(ndk);
 	request.kind = KIND_ZAP_REQUEST;
-	request.content = `Zap Gallery: ${image.title}`;
+	request.content = `${APP_NAME}: ${image.title}`;
 	request.tags = [
 		// The provider publishes the receipt here, where the server looks for it
 		['relays', ...RELAY_URLS],
